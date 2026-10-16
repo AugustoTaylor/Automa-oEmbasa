@@ -214,7 +214,7 @@ def relaunch_from_local_runtime_if_needed() -> bool:
 def require_sap_session_on_startup() -> bool:
     from backend.settings import get_setting
 
-    raw_value = get_setting("startup", "require_sap_session", default=True)
+    raw_value = get_setting("startup", "require_sap_session", default=False)
 
     if isinstance(raw_value, bool):
         return raw_value

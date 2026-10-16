@@ -24,6 +24,12 @@ const MONITOR_STAGES = {
   ],
   extratos: [
     { id: "BE", codigo: "BE", titulo: "Baixar extratos" }
+  ],
+  saldos: [
+    { id: "PLANILHA", codigo: "XLSX", titulo: "Validar modelo" },
+    { id: "SAP_SALDOS", codigo: "SAP", titulo: "Consultar contas" },
+    { id: "CONFERIR_SALDOS", codigo: "OK", titulo: "Conferir totais" },
+    { id: "SALVAR_RELATORIO", codigo: "XLSX", titulo: "Salvar relatorio" }
   ]
 };
 
@@ -77,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.4.58";
+const APP_VERSION = "1.5.1";
 const CEP_API_BASE_URL = "https://viacep.com.br/ws";
 const CEP_DEBOUNCE_MS = 450;
 const CEP_UF_PERMITIDA = "BA";
@@ -126,7 +132,6 @@ const MESES_EXTRATO_SIGLA = {
   "11": "NOV",
   "12": "DEZ"
 };
-const EXTRATO_PASTA_BASE_PADRAO = "";
 const NAVEGADORES_EXTRATO = {
   opera: "Opera",
   chrome: "Chrome",
@@ -200,6 +205,8 @@ const state = {
   extratoCheckpoint: null,
   extratoPastaBase: "",
   extratoPastaCarregada: false,
+  saldoPlanilhaAnalise: null,
+  saldoPlanilhaBusy: false,
   currentPdfNameNotice: "",
   lastPdfNameNotice: "",
   currentPdfNoticeId: "",
@@ -2002,7 +2009,8 @@ function setSidebarActive(view) {
     boletos: "navBoleto",
     cliente: "navCliente",
     multa: "navMulta",
-    extratos: "navExtratos"
+    extratos: "navExtratos",
+    saldos: "navSaldoContas"
   };
 
   Object.values(mapa).forEach((id) => {
@@ -2040,7 +2048,8 @@ function mostrarPainelWorkspace(view) {
     boletos: el("mainFormPanel"),
     cliente: el("clientRegistrationPanel"),
     multa: el("multaContratualPanel"),
-    extratos: el("bankStatementsPanel")
+    extratos: el("bankStatementsPanel"),
+    saldos: el("accountBalancesPanel")
   };
 
   Object.entries(panels).forEach(([key, node]) => {
@@ -2180,6 +2189,10 @@ async function carregarPastaPadraoExtratos() {
     const resposta = await window.pywebview.api.obter_pasta_padrao_extratos();
     state.extratoPastaBase = normalizarPastaBaseExtrato(resposta?.pasta_base);
     state.extratoPastaCarregada = true;
+
+    if (resposta?.configuracao_invalida && resposta?.msg) {
+      mostrarErroExtrato(resposta.msg);
+    }
   } catch (error) {
     state.extratoPastaBase = "";
     state.extratoPastaCarregada = false;
@@ -2224,8 +2237,8 @@ async function selecionarPastaBaseExtratos(options = {}) {
     atualizarPastaBaseExtratosUI();
     showSimpleOperationalToast(
       resposta.salva_como_padrao
-        ? "Pasta dos extratos definida como padrao."
-        : "Pasta selecionada para esta sessao."
+        ? "Pasta corporativa dos extratos memorizada."
+        : "Pasta corporativa selecionada para esta sessao."
     );
     return state.extratoPastaBase;
   } catch (error) {
@@ -2252,7 +2265,7 @@ function normalizarContaExtrato(input) {
 }
 
 function montarPastaDestinoExtrato(mes, ano, pastaBase) {
-  const base = normalizarPastaBaseExtrato(pastaBase || EXTRATO_PASTA_BASE_PADRAO);
+  const base = normalizarPastaBaseExtrato(pastaBase);
   const sigla = MESES_EXTRATO_SIGLA[mes] || "MES";
 
   if (!mes || String(ano || "").length !== 4) {
@@ -2345,9 +2358,7 @@ function montarPayloadExtratos() {
   const navegador = el("extratoNavegador")?.value || "opera";
   const mes = el("extratoMes")?.value || "";
   const ano = String(el("extratoAno")?.value || "").replace(/\D/g, "").slice(0, 4);
-  const pastaBase = normalizarPastaBaseExtrato(
-    state.extratoPastaBase || EXTRATO_PASTA_BASE_PADRAO
-  );
+  const pastaBase = normalizarPastaBaseExtrato(state.extratoPastaBase);
 
   limparErroExtrato();
 
@@ -2367,7 +2378,7 @@ function montarPayloadExtratos() {
   }
 
   if (!pastaBase) {
-    mostrarErroExtrato("Selecione a pasta-base dos extratos.");
+    mostrarErroExtrato("Selecione a pasta corporativa EXTRATOS na unidade de rede.");
     return null;
   }
 
@@ -2563,23 +2574,347 @@ function showExtratosWorkspace(options = {}) {
   window.setTimeout(() => el("extratoMes")?.focus(), 180);
 }
 
-function prepararBaixaExtratos() {
-  const payload = montarPayloadExtratos();
+function preencherPeriodoSaldoContasPadrao(force = false) {
+  const periodo = obterPeriodoPadraoExtrato();
+  const mes = el("saldoMes");
+  const ano = el("saldoAno");
 
-  if (!payload) {
-    setStatus("Revise os extratos", "error");
+  if (mes && (force || !mes.value)) {
+    mes.value = periodo.mes;
+  }
+
+  if (ano && (force || !ano.value)) {
+    ano.value = periodo.ano;
+  }
+
+  atualizarPeriodoSaldoContas();
+}
+
+function normalizarAnoSaldoContas(input) {
+  input.value = String(input.value || "").replace(/\D/g, "").slice(0, 4);
+  atualizarPeriodoSaldoContas();
+}
+
+function atualizarPeriodoSaldoContas() {
+  const mes = el("saldoMes")?.value || "";
+  const ano = String(el("saldoAno")?.value || "").replace(/\D/g, "").slice(0, 4);
+  const periodo = el("saldoPlanilhaPeriodo");
+
+  if (periodo && !el("saldoPlanilhaResumo")?.classList.contains("hidden")) {
+    periodo.textContent = mes && ano.length === 4
+      ? `${MESES_EXTRATO[mes] || mes}/${ano}`
+      : "--";
+  }
+}
+
+function limparErroSaldoContas() {
+  const erro = el("saldoPlanilhaError");
+
+  if (erro) {
+    erro.textContent = "";
+    erro.classList.add("hidden");
+  }
+}
+
+function mostrarErroSaldoContas(mensagem) {
+  const erro = el("saldoPlanilhaError");
+
+  if (erro) {
+    erro.textContent = mensagem || "Nao foi possivel analisar a planilha.";
+    erro.classList.remove("hidden");
+  }
+}
+
+function formatarMoedaSaldoContas(valor) {
+  const numero = Number(valor);
+
+  if (!Number.isFinite(numero)) {
+    return "--";
+  }
+
+  return numero.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function setSaldoPlanilhaBusy(busy) {
+  state.saldoPlanilhaBusy = Boolean(busy);
+  const selecionar = el("saldoPlanilhaSelecionarButton");
+  const limpar = el("saldoPlanilhaLimparButton");
+
+  if (selecionar) {
+    selecionar.disabled = state.saldoPlanilhaBusy;
+    selecionar.textContent = state.saldoPlanilhaBusy ? "Analisando..." : "Selecionar";
+  }
+
+  if (limpar) {
+    limpar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise;
+  }
+}
+
+function criarItemVerificacaoSaldoContas(item) {
+  const row = document.createElement("div");
+  row.className = `account-check-item ${item?.ok ? "is-ok" : "is-error"}`;
+
+  const status = document.createElement("span");
+  status.className = "account-check-status";
+  status.textContent = item?.ok ? "OK" : "!";
+
+  const copy = document.createElement("div");
+  copy.className = "account-check-copy";
+
+  const titulo = document.createElement("strong");
+  titulo.textContent = item?.titulo || "Verificacao";
+
+  const detalhe = document.createElement("small");
+  detalhe.textContent = item?.detalhe || "--";
+
+  copy.append(titulo, detalhe);
+  row.append(status, copy);
+  return row;
+}
+
+function criarItemAvisoSaldoContas(mensagem) {
+  const row = document.createElement("div");
+  row.className = "account-warning-item";
+
+  const status = document.createElement("span");
+  status.className = "account-check-status";
+  status.textContent = "!";
+
+  const copy = document.createElement("div");
+  copy.className = "account-check-copy";
+
+  const titulo = document.createElement("strong");
+  titulo.textContent = "Atencao";
+
+  const detalhe = document.createElement("small");
+  detalhe.textContent = String(mensagem || "Revise a planilha selecionada.");
+
+  copy.append(titulo, detalhe);
+  row.append(status, copy);
+  return row;
+}
+
+function renderizarAnaliseSaldoContas(analise) {
+  const arquivo = el("saldoPlanilhaArquivo");
+  const caminho = el("saldoPlanilhaCaminho");
+  const badge = el("saldoPlanilhaBadge");
+  const resumoNode = el("saldoPlanilhaResumo");
+  const detalhesNode = el("saldoPlanilhaDetalhes");
+  const limpar = el("saldoPlanilhaLimparButton");
+
+  if (!analise) {
+    if (arquivo) arquivo.textContent = "Nenhuma planilha selecionada";
+    if (caminho) {
+      caminho.textContent = "Formato aceito: .xlsx. Excel ou LibreOffice nao precisam estar abertos.";
+      caminho.title = "";
+    }
+    if (badge) badge.className = "doc-badge neutral";
+    if (badge) badge.textContent = "SC";
+    resumoNode?.classList.add("hidden");
+    detalhesNode?.classList.add("hidden");
+    if (limpar) limpar.disabled = true;
     return;
   }
 
-  window.resetarProgresso();
-  ativarEtapa(0, 40, `GovConta Caixa preparado para ${payload.mes_label}/${payload.ano}.`);
-  concluirEtapa(0, `Salvar PDF na area de trabalho.`);
-  setStatus("Base pronta", "success");
-  log(`Rotina de extratos preparada: ${payload.banco_label} - ${payload.mes_label}/${payload.ano}.`);
-  log(`Passos mapeados: ${payload.passos.join(" > ")}.`);
-  log(`Destino sugerido: ${payload.pasta_destino || "Area de trabalho do usuario atual"}.`);
-  log(`Nome sugerido: ${payload.nome_arquivo}.`);
-  showSimpleOperationalToast("Roteiro Caixa preparado com pasta e nome sugeridos.");
+  if (arquivo) arquivo.textContent = analise.arquivo || "Planilha selecionada";
+  if (caminho) {
+    caminho.textContent = analise.caminho || "--";
+    caminho.title = analise.caminho || "";
+  }
+
+  if (!analise.ok) {
+    if (badge) badge.className = "doc-badge invalid";
+    if (badge) badge.textContent = "Revisar";
+    resumoNode?.classList.add("hidden");
+    detalhesNode?.classList.add("hidden");
+    if (limpar) limpar.disabled = false;
+    return;
+  }
+
+  const resumo = analise.resumo || {};
+  const periodo = analise.periodo || {};
+  const verificacoes = Array.isArray(analise.verificacoes) ? analise.verificacoes : [];
+  const avisos = Array.isArray(analise.avisos) ? analise.avisos : [];
+  const contas = Array.isArray(analise.contas) ? analise.contas : [];
+  const validacoesOk = verificacoes.filter((item) => item?.ok).length;
+
+  if (badge) {
+    badge.className = analise.modelo_valido ? "doc-badge valid" : "doc-badge invalid";
+    badge.textContent = analise.modelo_valido ? "Valido" : "Revisar";
+  }
+
+  if (periodo.mes && el("saldoMes")) el("saldoMes").value = periodo.mes;
+  if (periodo.ano && el("saldoAno")) el("saldoAno").value = periodo.ano;
+
+  if (el("saldoPlanilhaAba")) el("saldoPlanilhaAba").textContent = analise.aba_modelo || "SET.26";
+  if (el("saldoPlanilhaContas")) {
+    el("saldoPlanilhaContas").textContent = `${resumo.contas_encontradas || 0} de ${resumo.contas_esperadas || 41}`;
+  }
+
+  const conferencia = el("saldoPlanilhaConferencia");
+  if (conferencia) {
+    if (resumo.conferencia === "ok") {
+      conferencia.textContent = `OK · ${formatarMoedaSaldoContas(resumo.total_verde)}`;
+    } else if (resumo.conferencia === "divergente") {
+      conferencia.textContent = `Diferenca ${formatarMoedaSaldoContas(resumo.diferenca)}`;
+    } else {
+      conferencia.textContent = "Pendente";
+    }
+  }
+
+  if (el("saldoPlanilhaValidacoesResumo")) {
+    el("saldoPlanilhaValidacoesResumo").textContent = `${validacoesOk} de ${verificacoes.length} validas`;
+  }
+
+  if (el("saldoPlanilhaSaldosResumo")) {
+    el("saldoPlanilhaSaldosResumo").textContent = `${resumo.saldos_preenchidos || 0} saldos preenchidos`;
+  }
+
+  const verificacoesNode = el("saldoPlanilhaVerificacoes");
+  if (verificacoesNode) {
+    verificacoesNode.replaceChildren(...verificacoes.map(criarItemVerificacaoSaldoContas));
+  }
+
+  const avisosNode = el("saldoPlanilhaAvisos");
+  if (avisosNode) {
+    avisosNode.replaceChildren(...avisos.map(criarItemAvisoSaldoContas));
+    avisosNode.classList.toggle("hidden", avisos.length === 0);
+  }
+
+  const contasNode = el("saldoPlanilhaContasLista");
+  if (contasNode) {
+    const rows = contas.map((item) => {
+      const row = document.createElement("div");
+      row.className = `account-list-row ${item?.status === "vazio" ? "is-empty" : ""}`;
+
+      const linha = document.createElement("span");
+      linha.textContent = String(item?.linha || "--");
+
+      const conta = document.createElement("strong");
+      conta.textContent = item?.conta || "Conta ausente";
+
+      const saldo = document.createElement("small");
+      saldo.textContent = item?.status === "vazio"
+        ? "Nao preenchido"
+        : item?.status === "zero"
+          ? "-"
+          : formatarMoedaSaldoContas(item?.saldo_atual);
+
+      row.append(linha, conta, saldo);
+      return row;
+    });
+    contasNode.replaceChildren(...rows);
+  }
+
+  resumoNode?.classList.remove("hidden");
+  detalhesNode?.classList.remove("hidden");
+  if (limpar) limpar.disabled = false;
+  atualizarPeriodoSaldoContas();
+}
+
+async function selecionarPlanilhaSaldoContas() {
+  if (state.saldoPlanilhaBusy) {
+    return;
+  }
+
+  limparErroSaldoContas();
+
+  if (!window.pywebview?.api?.selecionar_planilha_saldo_contas) {
+    mostrarErroSaldoContas("A selecao de planilha esta disponivel somente dentro do aplicativo desktop.");
+    return;
+  }
+
+  setSaldoPlanilhaBusy(true);
+  resetarEtapas();
+  ativarEtapa(0, 25, "Selecionando e lendo o modelo SET.26.");
+  setStatus("Analisando planilha", "running");
+
+  try {
+    const pastaInicial = state.saldoPlanilhaAnalise?.caminho || "";
+    const resposta = await window.pywebview.api.selecionar_planilha_saldo_contas(pastaInicial);
+
+    if (resposta?.cancelado) {
+      resetarEtapas();
+      setStatus("Saldo de contas", "idle");
+      return;
+    }
+
+    state.saldoPlanilhaAnalise = resposta || null;
+    renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
+
+    if (!resposta?.ok) {
+      mostrarErroSaldoContas(resposta?.msg || "Nao foi possivel validar a planilha.");
+      falharEtapa(0, resposta?.msg || "Modelo nao validado.");
+      setStatus("Revise a planilha", "error");
+      log(resposta?.msg || "Falha ao validar a planilha de saldo de contas.", "error");
+      return;
+    }
+
+    if (resposta.modelo_valido) {
+      concluirEtapa(0, "Modelo SET.26 e 41 contas validados.");
+      setStatus("Modelo validado", "success");
+      log(`Planilha de saldo validada: ${resposta.arquivo}.`);
+      log(`${resposta.resumo?.contas_encontradas || 0} contas prontas para a futura consulta SAP.`);
+      showSimpleOperationalToast("Modelo SET.26 validado com sucesso.");
+    } else {
+      mostrarErroSaldoContas("A planilha foi lida, mas possui diferencas em relacao ao modelo SET.26.");
+      falharEtapa(0, "Modelo diferente do padrao esperado.");
+      setStatus("Revise o modelo", "error");
+    }
+  } catch (error) {
+    const mensagem = error?.message || String(error || "Falha ao analisar a planilha.");
+    mostrarErroSaldoContas(mensagem);
+    falharEtapa(0, mensagem);
+    setStatus("Falha na planilha", "error");
+    log(mensagem, "error");
+  } finally {
+    setSaldoPlanilhaBusy(false);
+  }
+}
+
+function limparPlanilhaSaldoContas() {
+  if (state.saldoPlanilhaBusy) {
+    return;
+  }
+
+  state.saldoPlanilhaAnalise = null;
+  limparErroSaldoContas();
+  renderizarAnaliseSaldoContas(null);
+  resetarEtapas();
+  preencherPeriodoSaldoContasPadrao(true);
+  setStatus("Saldo de contas", "idle");
+}
+
+function showSaldoContasWorkspace(options = {}) {
+  if (state.flowRunning) {
+    showSimpleOperationalToast("Aguarde a conclusao da acao SAP atual.");
+    return;
+  }
+
+  setMonitorMode("saldos");
+  mostrarPainelWorkspace("saldos");
+  hideCadastroClienteFeedback();
+  setSidebarExpanded(false);
+
+  if (!state.saldoPlanilhaAnalise) {
+    preencherPeriodoSaldoContasPadrao();
+  } else {
+    renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
+  }
+
+  if (options.status !== false) {
+    setStatus(
+      state.saldoPlanilhaAnalise?.modelo_valido ? "Modelo validado" : "Saldo de contas",
+      state.saldoPlanilhaAnalise?.modelo_valido ? "success" : "idle"
+    );
+  }
+
+  window.setTimeout(() => el("saldoPlanilhaSelecionarButton")?.focus(), 180);
 }
 
 function setExtratoChromeBusy(busy) {
@@ -5557,6 +5892,8 @@ function limparPainel() {
     showMultaContratualWorkspace({ status: false });
   } else if (workspaceAtual === "extratos") {
     showExtratosWorkspace({ status: false });
+  } else if (workspaceAtual === "saldos") {
+    showSaldoContasWorkspace({ status: false });
   } else {
     showBoletoWorkspace({ status: false });
   }
@@ -6606,6 +6943,7 @@ atualizarValidadeMultaUI();
 atualizarTipo();
 atualizarModoValorUI();
 preencherMesAnoExtratosPadrao(true);
+preencherPeriodoSaldoContasPadrao(true);
 registrarValidacaoInterativa();
 registrarCepAutocomplete();
 updateContactCharCount();

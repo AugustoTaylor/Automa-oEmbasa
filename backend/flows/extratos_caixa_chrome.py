@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -575,21 +576,20 @@ def _unique_path(path: Path) -> Path:
     return path.with_name(f"{stem} {timestamp}{suffix}")
 
 
-def _desktop_extratos_base() -> Path:
-    candidatos = []
+def _pasta_em_unidade_rede_corporativa(pasta: Path) -> bool:
+    texto = str(pasta or "").strip()
 
-    for env_name in ("USERPROFILE", "OneDriveCommercial", "OneDriveConsumer", "OneDrive"):
-        valor = os.environ.get(env_name)
-        if valor:
-            candidatos.append(Path(valor) / "Desktop")
+    if texto.startswith("\\\\"):
+        return True
 
-    candidatos.append(Path.home() / "Desktop")
+    ancora = Path(texto).anchor
+    if not ancora:
+        return False
 
-    for candidato in candidatos:
-        if candidato.exists():
-            return candidato / "EXTRATOS_CAIXA"
-
-    return candidatos[0] / "EXTRATOS_CAIXA"
+    try:
+        return int(ctypes.windll.kernel32.GetDriveTypeW(str(ancora))) == 4
+    except Exception:
+        return False
 
 
 def _resolver_pasta_destino_extrato(dados: dict) -> Path:
@@ -597,20 +597,54 @@ def _resolver_pasta_destino_extrato(dados: dict) -> Path:
     base_informada = str(dados.get("pasta_base") or "").strip()
     mes = str(dados.get("mes") or "")
     ano = str(dados.get("ano") or "")
-    sigla = str(dados.get("mes_sigla") or MESES_SIGLA.get(mes) or "MES")
+    sigla = MESES_SIGLA.get(mes)
+
+    if not base_informada:
+        raise CaixaChromeError(
+            "Selecione a pasta corporativa EXTRATOS na unidade de rede antes da baixa."
+        )
+
+    base = Path(base_informada)
+
+    if not _pasta_em_unidade_rede_corporativa(base):
+        raise CaixaChromeError(
+            "A pasta-base dos extratos precisa estar em uma unidade de rede "
+            "corporativa. Pastas locais e Area de Trabalho nao sao aceitas."
+        )
+
+    if not base.is_dir():
+        raise CaixaChromeError(
+            "A pasta corporativa dos extratos nao esta disponivel. "
+            f"Verifique a unidade de rede: {base}."
+        )
+
+    if not sigla or not re.fullmatch(r"\d{4}", ano):
+        raise CaixaChromeError(
+            "Informe um mes valido e o ano com quatro digitos para montar "
+            "a pasta corporativa."
+        )
+
+    destino_esperado = base / ano / f"{mes}.{sigla}" / "CEF"
 
     if destino_informado:
-        return Path(destino_informado)
+        destino_recebido = os.path.normcase(os.path.normpath(destino_informado))
+        destino_calculado = os.path.normcase(os.path.normpath(str(destino_esperado)))
 
-    base = Path(base_informada) if base_informada else _desktop_extratos_base()
+        if destino_recebido != destino_calculado:
+            raise CaixaChromeError(
+                "O destino mensal informado nao corresponde ao padrao corporativo "
+                "ANO\\MM.SIGLA\\CEF."
+            )
 
-    if mes and ano:
-        return base / ano / f"{mes}.{sigla}" / "CEF"
-
-    return base
+    return destino_esperado
 
 
 def _garantir_pasta_destino_extrato(pasta_destino: Path, log_callback=None) -> bool:
+    if not _pasta_em_unidade_rede_corporativa(pasta_destino):
+        raise CaixaChromeError(
+            "Destino de extrato recusado: a pasta nao pertence a uma unidade de rede."
+        )
+
     ja_existia = pasta_destino.is_dir()
 
     try:
@@ -635,33 +669,7 @@ def _garantir_pasta_destino_extrato(pasta_destino: Path, log_callback=None) -> b
 
 
 def _pastas_monitoradas_download(pasta_destino: Path) -> list[Path]:
-    candidatos = [pasta_destino]
-
-    for base in (
-        os.environ.get("USERPROFILE"),
-        os.environ.get("OneDriveCommercial"),
-        os.environ.get("OneDriveConsumer"),
-        os.environ.get("OneDrive"),
-    ):
-        if base:
-            candidatos.append(Path(base) / "Downloads")
-
-    candidatos.append(Path.home() / "Downloads")
-    candidatos.append(Path.home() / "Desktop")
-
-    vistos = set()
-    pastas = []
-    for pasta in candidatos:
-        try:
-            chave = str(pasta.resolve()).lower()
-        except Exception:
-            chave = str(pasta).lower()
-        if chave in vistos:
-            continue
-        vistos.add(chave)
-        pastas.append(pasta)
-
-    return pastas
+    return [Path(pasta_destino)]
 
 
 def _normalizar_pastas(pastas: Path | list[Path] | tuple[Path, ...]) -> list[Path]:
@@ -726,8 +734,8 @@ def _aguardar_pdf(
         time.sleep(1)
 
     raise CaixaChromeError(
-        "O PDF nao apareceu na pasta destino. Confira se o Chrome abriu uma janela "
-        "'Salvar como' ou se o download foi bloqueado."
+        "O PDF nao apareceu na pasta corporativa de destino. Confira se o navegador "
+        "bloqueou o download ou abriu uma janela 'Salvar como'."
     )
 
 

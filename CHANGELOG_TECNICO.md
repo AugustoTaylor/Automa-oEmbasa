@@ -1,5 +1,60 @@
 # Registro técnico de alterações
 
+## Quinta-feira, 15/10/2026 - Versao 1.5.1
+
+**Inicializacao sem SAP**
+
+- Removida a obrigatoriedade de existir uma sessao SAP aberta e logada para iniciar o aplicativo.
+- A interface e as funcoes locais, incluindo `Saldo de contas`, agora podem ser abertas sem o SAP.
+- As operacoes que efetivamente automatizam o SAP continuam validando a sessao somente no momento da execucao.
+- Alterado o comportamento padrao para `require_sap_session=false`, inclusive quando o arquivo externo de configuracao nao estiver presente no pacote.
+
+## Quarta-feira, 14/10/2026 - Versao 1.5.0
+
+**Nova secao de Saldo de Contas**
+
+- Incluida a opcao `Saldo de contas` no menu principal do aplicativo.
+- Criado o painel mensal com selecao de mes, ano e arquivo `.xlsx`.
+- Definida a aba `SET.26` como modelo principal para a primeira etapa da automacao.
+- Adicionada leitura direta da planilha sem depender de Microsoft Excel ou LibreOffice instalados.
+- Implementada validacao dos cabecalhos, das 41 contas de `C20:C60` e das formulas de conferencia em `B59`, `D61`, `J5`, `J6` e `J7`.
+- Adicionada visualizacao dos saldos atuais, vazios e zeros sem transformar ausencia de dado em saldo zero.
+- Adicionada conferencia entre o total independente em `C61` e a soma de `D20:D60`.
+- A consulta SAP permanece desativada e identificada como proxima etapa ate o mapeamento da transacao e dos campos da tela.
+- Incluida a dependencia `openpyxl` no build empresarial.
+
+**Validacao realizada**
+
+- Analise bem-sucedida da planilha real `SALDO DE CONTAS - FLUXO - SET.26.xlsx`.
+- Confirmacao da aba `SET.26`, das 41 contas e do total de `R$ 867.605.292,69`.
+- Testes automatizados para modelo valido, conta divergente, saldos vazios e ausencia da aba-modelo.
+- `python -m py_compile interface.py backend\relatorios\saldo_contas.py`
+- `node --check interface\app.js`
+
+## Terca-feira, 28/07/2026 - Versao 1.4.59
+
+**Ajustes aplicados**
+
+- Consolidada a rotina de extratos Caixa para uso exclusivo no ambiente empresarial.
+- Removido o fallback que criava `EXTRATOS_CAIXA` na Area de Trabalho quando nenhuma pasta-base era informada.
+- Removida a procura de PDFs nas pastas locais `Desktop` e `Downloads`; a rotina monitora somente a pasta corporativa mensal.
+- A selecao de pasta agora aceita apenas caminho UNC ou unidade mapeada identificada pelo Windows como unidade de rede.
+- A pasta corporativa salva e revalidada ao abrir a secao. Se a unidade estiver desconectada, o app limpa o destino e solicita nova selecao.
+- O backend exige a pasta-base corporativa, valida sua disponibilidade e recalcula o destino no formato `ANO\MM.SIGLA\CEF`.
+- A sigla da pasta mensal agora e derivada internamente do mes selecionado, e o ano precisa conter exatamente quatro digitos.
+- Um destino mensal divergente do padrao corporativo e recusado antes de qualquer comando no navegador.
+- Mantida a criacao automatica das subpastas `ANO`, `MM.SIGLA` e `CEF` quando a raiz corporativa `EXTRATOS` estiver acessivel.
+- Removidos textos e funcoes antigas de prototipo que ainda orientavam salvar extratos na Area de Trabalho.
+
+**Validacao realizada**
+
+- `python -m py_compile interface.py backend\flows\extratos_caixa_chrome.py`
+- `node --check interface\app.js`
+- Teste de recusa de pasta local.
+- Simulacao de unidade de rede para criacao e reutilizacao de `ANO\MM.SIGLA\CEF`.
+- Verificacao de que somente o destino corporativo e monitorado durante o download.
+- `git diff --check`
+
 ## Terca-feira, 28/07/2026 - Versao 1.4.58
 
 **Ajustes aplicados**

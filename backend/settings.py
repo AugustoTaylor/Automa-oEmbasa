@@ -10,7 +10,7 @@ from pathlib import Path
 DEFAULT_SETTINGS = {
     "app": {
         "name": "EMBASA",
-        "version": "1.4.58",
+        "version": "1.5.1",
         "company_code": "EMBA",
     },
     "security": {
@@ -46,7 +46,7 @@ DEFAULT_SETTINGS = {
         "lock_timeout_seconds": 5,
     },
     "startup": {
-        "require_sap_session": True,
+        "require_sap_session": False,
     },
     "timing": {
         "action_delay_seconds": 0,

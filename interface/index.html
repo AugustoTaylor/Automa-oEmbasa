@@ -70,6 +70,16 @@
         <span class="sidebar-label">Baixar extratos</span>
       </button>
 
+      <button
+        id="navSaldoContas"
+        class="sidebar-nav-item"
+        type="button"
+        onclick="showSaldoContasWorkspace()"
+      >
+        <span class="sidebar-icon">SC</span>
+        <span class="sidebar-label">Saldo de contas</span>
+      </button>
+
     </nav>
 
     <div class="sidebar-footer" aria-label="Utilit&aacute;rios">
@@ -125,7 +135,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.4.58</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.5.1</span>
           </div>
         </div>
       </div>
@@ -662,9 +672,9 @@
 
         <div class="bank-folder-picker">
           <div class="bank-folder-copy">
-            <span>Pasta-base dos extratos</span>
+            <span>Pasta corporativa dos extratos</span>
             <strong id="extratoPastaBaseLabel">Nenhuma pasta selecionada</strong>
-            <small>Selecione a pasta EXTRATOS. O app organiza ANO, M&Ecirc;S e CEF.</small>
+            <small>Selecione EXTRATOS na unidade de rede. O app organiza ANO, M&Ecirc;S e CEF.</small>
           </div>
           <button
             id="extratoFolderButton"
@@ -678,7 +688,7 @@
 
         <label class="bank-folder-default">
           <input id="extratoFolderDefault" type="checkbox" checked />
-          <span>Definir como caminho padr&atilde;o neste computador</span>
+          <span>Memorizar esta pasta corporativa neste computador</span>
         </label>
 
         <p id="extratoFormError" class="field-message hidden"></p>
@@ -717,6 +727,133 @@
             <strong id="extratoRunCount">0 contas</strong>
           </div>
           <div id="extratoRunList" class="bank-run-list"></div>
+        </div>
+      </section>
+
+      <section id="accountBalancesPanel" class="panel account-balances-panel hidden">
+        <div class="panel-head compact">
+          <div>
+            <p class="section-kicker">Relat&oacute;rio mensal</p>
+            <h2>Saldo de contas</h2>
+          </div>
+          <div id="saldoPlanilhaBadge" class="doc-badge neutral">SC</div>
+        </div>
+
+        <div class="account-balance-grid">
+          <label class="field">
+            <span>M&ecirc;s de refer&ecirc;ncia</span>
+            <select id="saldoMes" onchange="atualizarPeriodoSaldoContas()">
+              <option value="">Selecione</option>
+              <option value="01">Janeiro</option>
+              <option value="02">Fevereiro</option>
+              <option value="03">Mar&ccedil;o</option>
+              <option value="04">Abril</option>
+              <option value="05">Maio</option>
+              <option value="06">Junho</option>
+              <option value="07">Julho</option>
+              <option value="08">Agosto</option>
+              <option value="09">Setembro</option>
+              <option value="10">Outubro</option>
+              <option value="11">Novembro</option>
+              <option value="12">Dezembro</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Ano</span>
+            <input
+              id="saldoAno"
+              type="number"
+              inputmode="numeric"
+              min="2020"
+              max="2099"
+              placeholder="2026"
+              oninput="normalizarAnoSaldoContas(this)"
+            />
+          </label>
+        </div>
+
+        <div class="spreadsheet-picker">
+          <div class="spreadsheet-picker-copy">
+            <span>Planilha do relat&oacute;rio</span>
+            <strong id="saldoPlanilhaArquivo">Nenhuma planilha selecionada</strong>
+            <small id="saldoPlanilhaCaminho">Formato aceito: .xlsx. Excel ou LibreOffice n&atilde;o precisam estar abertos.</small>
+          </div>
+          <button
+            id="saldoPlanilhaSelecionarButton"
+            class="ghost-action spreadsheet-picker-button"
+            type="button"
+            onclick="selecionarPlanilhaSaldoContas()"
+          >
+            Selecionar
+          </button>
+        </div>
+
+        <p id="saldoPlanilhaError" class="field-message hidden"></p>
+
+        <div id="saldoPlanilhaResumo" class="account-balance-summary hidden">
+          <div>
+            <span>Aba-modelo</span>
+            <strong id="saldoPlanilhaAba">SET.26</strong>
+          </div>
+          <div>
+            <span>Per&iacute;odo</span>
+            <strong id="saldoPlanilhaPeriodo">--</strong>
+          </div>
+          <div>
+            <span>Contas</span>
+            <strong id="saldoPlanilhaContas">0 de 41</strong>
+          </div>
+          <div>
+            <span>Confer&ecirc;ncia</span>
+            <strong id="saldoPlanilhaConferencia">Aguardando</strong>
+          </div>
+        </div>
+
+        <div id="saldoPlanilhaDetalhes" class="account-balance-details hidden">
+          <div class="account-balance-section-head">
+            <div>
+              <span>Valida&ccedil;&otilde;es do modelo</span>
+              <strong id="saldoPlanilhaValidacoesResumo">Aguardando</strong>
+            </div>
+          </div>
+          <div id="saldoPlanilhaVerificacoes" class="account-check-list"></div>
+
+          <div id="saldoPlanilhaAvisos" class="account-warning-list hidden"></div>
+
+          <div class="account-balance-section-head account-list-head">
+            <div>
+              <span>Contas encontradas</span>
+              <strong id="saldoPlanilhaSaldosResumo">0 saldos preenchidos</strong>
+            </div>
+          </div>
+          <div id="saldoPlanilhaContasLista" class="account-list-preview"></div>
+        </div>
+
+        <div class="account-balance-note">
+          <strong>Primeira etapa</strong>
+          <span>A se&ccedil;&atilde;o valida o modelo SET.26 e prepara as 41 contas. A consulta ao SAP ser&aacute; ativada depois do mapeamento da transa&ccedil;&atilde;o.</span>
+        </div>
+
+        <div class="flow-actions account-balance-actions">
+          <button
+            id="saldoPlanilhaLimparButton"
+            class="ghost-action"
+            type="button"
+            onclick="limparPlanilhaSaldoContas()"
+            disabled
+          >
+            Limpar sele&ccedil;&atilde;o
+          </button>
+          <button
+            id="saldoSapButton"
+            class="primary-action"
+            type="button"
+            disabled
+            title="Dispon&iacute;vel ap&oacute;s mapear a transa&ccedil;&atilde;o e os campos do SAP."
+          >
+            Buscar saldos no SAP
+          </button>
         </div>
       </section>
 

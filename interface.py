@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import re
 import threading
@@ -34,6 +35,10 @@ from backend.history import (
     registrar_historico_pedido,
 )
 from backend.logger import Logger
+from backend.relatorios.saldo_contas import (
+    ABA_MODELO_SALDO_CONTAS,
+    analisar_planilha_saldo_contas as analisar_arquivo_saldo_contas,
+)
 from backend.sap_connection import conectar_sap
 from backend.utils.sap_waits import SapKeepAlive
 from backend.support_mail import process_support_request
@@ -101,6 +106,22 @@ def _normalizar_pasta_base_extratos(caminho) -> Path:
         pasta = pasta.parent
 
     return pasta
+
+
+def _pasta_extratos_em_rede_corporativa(caminho) -> bool:
+    pasta = Path(str(caminho or "").strip())
+    texto = str(pasta)
+
+    if texto.startswith("\\\\"):
+        return True
+
+    if not pasta.anchor:
+        return False
+
+    try:
+        return int(ctypes.windll.kernel32.GetDriveTypeW(str(pasta.anchor))) == 4
+    except Exception:
+        return False
 
 
 # API exposta ao frontend pelo pywebview: o JS chama estes metodos.
@@ -893,6 +914,62 @@ class API:
             "Cadastrando setores no SAP",
         )
 
+    def analisar_planilha_saldo_contas(self, caminho):
+        try:
+            resultado = analisar_arquivo_saldo_contas(
+                caminho,
+                aba_modelo=ABA_MODELO_SALDO_CONTAS,
+            )
+            return _serializar_para_front(resultado)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "msg": f"Nao foi possivel analisar a planilha: {exc}",
+            }
+
+    def selecionar_planilha_saldo_contas(self, pasta_inicial=""):
+        window = self._get_window()
+
+        if window is None:
+            return {
+                "ok": False,
+                "msg": "A janela do aplicativo nao esta disponivel para selecionar a planilha.",
+            }
+
+        pasta_inicial = str(pasta_inicial or "").strip()
+        caminho_inicial = Path(pasta_inicial).expanduser() if pasta_inicial else None
+
+        if caminho_inicial and caminho_inicial.is_file():
+            pasta_inicial = str(caminho_inicial.parent)
+
+        try:
+            selecionadas = window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                directory=pasta_inicial,
+                allow_multiple=False,
+                file_types=("Planilha Excel (*.xlsx)",),
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "msg": f"Nao foi possivel abrir a selecao de planilha: {exc}",
+            }
+
+        if not selecionadas:
+            return {
+                "ok": False,
+                "cancelado": True,
+                "msg": "Selecao de planilha cancelada.",
+            }
+
+        selecionada = (
+            selecionadas[0]
+            if isinstance(selecionadas, (list, tuple))
+            else selecionadas
+        )
+
+        return self.analisar_planilha_saldo_contas(selecionada)
+
     def _arquivo_preferencias_extratos(self) -> Path:
         return get_runtime_root() / _EXTRATOS_PREFERENCIAS_ARQUIVO
 
@@ -907,8 +984,26 @@ class API:
         except Exception:
             return {"ok": True, "pasta_base": ""}
 
-        pasta_base = str((payload or {}).get("pasta_base") or "").strip()
-        return {"ok": True, "pasta_base": pasta_base}
+        pasta_base = _normalizar_pasta_base_extratos(
+            (payload or {}).get("pasta_base")
+        )
+
+        if (
+            not pasta_base
+            or not _pasta_extratos_em_rede_corporativa(pasta_base)
+            or not pasta_base.is_dir()
+        ):
+            return {
+                "ok": True,
+                "pasta_base": "",
+                "configuracao_invalida": True,
+                "msg": (
+                    "A pasta corporativa salva nao esta disponivel. "
+                    "Reconecte a unidade de rede e selecione a pasta EXTRATOS."
+                ),
+            }
+
+        return {"ok": True, "pasta_base": str(pasta_base)}
 
     def selecionar_pasta_base_extratos(self, pasta_inicial="", definir_padrao=True):
         window = self._get_window()
@@ -943,10 +1038,22 @@ class API:
         )
         pasta_base = _normalizar_pasta_base_extratos(selecionada)
 
+        if not _pasta_extratos_em_rede_corporativa(pasta_base):
+            return {
+                "ok": False,
+                "msg": (
+                    "Selecione a pasta EXTRATOS em uma unidade de rede corporativa. "
+                    "Pastas locais e Area de Trabalho nao sao aceitas."
+                ),
+            }
+
         if not pasta_base.exists() or not pasta_base.is_dir():
             return {
                 "ok": False,
-                "msg": "A pasta selecionada nao esta disponivel.",
+                "msg": (
+                    "A pasta corporativa selecionada nao esta disponivel. "
+                    "Verifique a conexao com a unidade de rede."
+                ),
             }
 
         if definir_padrao:
