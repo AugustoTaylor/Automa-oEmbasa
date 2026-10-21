@@ -22,6 +22,7 @@ from backend.flows.extratos_caixa_chrome import (
     diagnosticar_chrome_caixa,
     executar_download_extrato_atual,
 )
+from backend.flows.saldo_contas_sap import executar_consulta_saldos_sap
 from backend.drafts import (
     diagnostico_rascunhos,
     excluir_rascunho_cliente,
@@ -37,7 +38,9 @@ from backend.history import (
 from backend.logger import Logger
 from backend.relatorios.saldo_contas import (
     ABA_MODELO_SALDO_CONTAS,
+    CONTAS_APLICACAO_MODELO,
     analisar_planilha_saldo_contas as analisar_arquivo_saldo_contas,
+    preencher_planilha_saldo_contas,
 )
 from backend.sap_connection import conectar_sap
 from backend.utils.sap_waits import SapKeepAlive
@@ -969,6 +972,187 @@ class API:
         )
 
         return self.analisar_planilha_saldo_contas(selecionada)
+
+    def executar_saldo_contas_sap(self, dados):
+        resultado_final = {}
+        concluido = threading.Event()
+
+        with self._flow_lock:
+            if self._flow_running:
+                return {
+                    "ok": False,
+                    "msg": "Ja existe uma acao SAP em andamento.",
+                    "tempo_real": True,
+                }
+
+            self._flow_running = True
+
+        def worker():
+            add_original = self._instalar_logger_tempo_real()
+            pythoncom = None
+
+            try:
+                try:
+                    import pythoncom as pythoncom_module
+
+                    pythoncom_module.CoInitialize()
+                    pythoncom = pythoncom_module
+                except Exception:
+                    pythoncom = None
+
+                payload = dict(dados or {})
+                caminho = str(payload.get("caminho") or "").strip()
+                mes = payload.get("mes")
+                ano = payload.get("ano")
+                analise = analisar_arquivo_saldo_contas(
+                    caminho,
+                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                )
+
+                if not analise.get("ok") or not analise.get("modelo_valido"):
+                    raise ValueError(
+                        "A planilha precisa passar pela validacao do modelo SET.26 antes da consulta."
+                    )
+
+                self._logger.clear()
+                self._emitir_status("Consultando saldos no SAP", "running")
+                self._emitir_progresso(
+                    "PLANILHA",
+                    "done",
+                    "Modelo SET.26 e 41 contas validados.",
+                    100,
+                )
+                self._logger.add(
+                    -1,
+                    f"Consultando {len(CONTAS_APLICACAO_MODELO)} contas no SAP.",
+                    publico=True,
+                )
+
+                with self._sap_activity_lock:
+                    session = conectar_sap()
+                    consulta = executar_consulta_saldos_sap(
+                        session,
+                        CONTAS_APLICACAO_MODELO,
+                        mes,
+                        ano,
+                        logger=self._logger,
+                        progress_callback=self._emitir_progresso,
+                    )
+
+                saldos = consulta.get("saldos") or {}
+                self._emitir_progresso(
+                    "CONFERIR_SALDOS",
+                    "running",
+                    "Somando os subtotais e preenchendo zeros nas contas ausentes.",
+                    35,
+                )
+                total = sum(saldos.values(), start=0)
+                total_formatado = (
+                    f"{float(total):,.2f}"
+                    .replace(",", "X")
+                    .replace(".", ",")
+                    .replace("X", ".")
+                )
+                self._emitir_progresso(
+                    "CONFERIR_SALDOS",
+                    "done",
+                    f"Total independente conferido: R$ {total_formatado}.",
+                    100,
+                )
+                self._emitir_progresso(
+                    "SALVAR_RELATORIO",
+                    "running",
+                    "Criando uma copia preenchida sem alterar o arquivo original.",
+                    40,
+                )
+                planilha = preencher_planilha_saldo_contas(
+                    caminho,
+                    saldos,
+                    mes,
+                    ano,
+                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                )
+                analise_saida = analisar_arquivo_saldo_contas(
+                    planilha["caminho_saida"],
+                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                )
+                self._emitir_progresso(
+                    "SALVAR_RELATORIO",
+                    "done",
+                    f"Relatorio salvo: {planilha['arquivo_saida']}",
+                    100,
+                )
+                self._logger.add(
+                    -1,
+                    f"Relatorio salvo em {planilha['caminho_saida']}",
+                    publico=True,
+                )
+                self._emitir_status("Relatorio de saldos concluido", "success")
+
+                resultado_final.update(
+                    _serializar_para_front(
+                        {
+                            "ok": True,
+                            "msg": "Consulta concluida e planilha preenchida.",
+                            "caminho_saida": planilha["caminho_saida"],
+                            "arquivo_saida": planilha["arquivo_saida"],
+                            "analise": analise_saida,
+                            "resumo": {
+                                **consulta,
+                                "saldos": None,
+                                "total": planilha["total"],
+                            },
+                            "logs": self._logger.get_logs(public_only=True),
+                            "tempo_real": True,
+                        }
+                    )
+                )
+            except Exception as exc:
+                mensagem = str(exc) or "Falha inesperada na consulta de saldos."
+                self._logger.add(
+                    -1,
+                    f"Falha na consulta de saldos: {mensagem}",
+                    nivel="ERRO",
+                    publico=True,
+                )
+                self._logger.add(
+                    -1,
+                    traceback.format_exc(),
+                    nivel="DEBUG",
+                    publico=False,
+                )
+                resultado_final.update(
+                    {
+                        "ok": False,
+                        "msg": mensagem,
+                        "logs": _serializar_para_front(
+                            self._logger.get_logs(public_only=True)
+                        ),
+                        "tempo_real": True,
+                    }
+                )
+                self._emitir_status("Falha na consulta de saldos", "error")
+            finally:
+                if pythoncom is not None:
+                    try:
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
+
+                self._restaurar_logger(add_original)
+
+                with self._flow_lock:
+                    self._flow_running = False
+
+                concluido.set()
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="SaldoContasSAP",
+        ).start()
+        concluido.wait()
+        return _serializar_para_front(resultado_final)
 
     def _arquivo_preferencias_extratos(self) -> Path:
         return get_runtime_root() / _EXTRATOS_PREFERENCIAS_ARQUIVO

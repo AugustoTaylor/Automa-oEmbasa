@@ -19,6 +19,7 @@ hiddenimports = [
     "clr_loader",
     "clr_loader.ffi",
     "pythoncom",
+    "win32clipboard",
     "tkinter",
     "win32com",
     "win32com.client",

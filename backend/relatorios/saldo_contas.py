@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
+from uuid import uuid4
 
 
 ABA_MODELO_SALDO_CONTAS = "SET.26"
@@ -186,6 +188,148 @@ def _carregar_planilha(caminho: Path, *, data_only: bool):
     )
 
 
+def _carregar_planilha_edicao(caminho: Path):
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise RuntimeError(
+            "O componente de escrita de planilhas nao esta instalado nesta versao do aplicativo."
+        ) from exc
+
+    return load_workbook(
+        filename=caminho,
+        data_only=False,
+        keep_links=True,
+    )
+
+
+def _proximo_caminho_saida(arquivo: Path) -> Path:
+    candidato = arquivo.with_name(f"{arquivo.stem} - PREENCHIDO{arquivo.suffix}")
+
+    if not candidato.exists():
+        return candidato
+
+    indice = 2
+
+    while True:
+        candidato = arquivo.with_name(
+            f"{arquivo.stem} - PREENCHIDO ({indice}){arquivo.suffix}"
+        )
+
+        if not candidato.exists():
+            return candidato
+
+        indice += 1
+
+
+def preencher_planilha_saldo_contas(
+    caminho,
+    saldos_por_conta,
+    mes,
+    ano,
+    aba_modelo: str = ABA_MODELO_SALDO_CONTAS,
+) -> dict:
+    arquivo = _validar_arquivo(caminho)
+    analise_origem = analisar_planilha_saldo_contas(arquivo, aba_modelo=aba_modelo)
+
+    if not analise_origem.get("ok") or not analise_origem.get("modelo_valido"):
+        raise ValueError(
+            "A planilha selecionada nao corresponde ao modelo SET.26 validado."
+        )
+
+    try:
+        mes_numero = int(mes)
+        ano_numero = int(ano)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Informe mes e ano validos para preencher a planilha.") from exc
+
+    if mes_numero < 1 or mes_numero > 12:
+        raise ValueError("O mes do relatorio deve estar entre 1 e 12.")
+
+    if ano_numero < 2020 or ano_numero > 2099:
+        raise ValueError("O ano do relatorio deve estar entre 2020 e 2099.")
+
+    saldos_normalizados = {}
+
+    for conta_bruta, saldo_bruto in dict(saldos_por_conta or {}).items():
+        conta = _normalizar_conta(conta_bruta)
+        saldo = _decimal_centavos(saldo_bruto)
+
+        if conta not in CONTAS_APLICACAO_MODELO:
+            continue
+
+        if saldo is None:
+            raise ValueError(f"Saldo invalido retornado para a conta {conta}.")
+
+        saldos_normalizados[conta] = saldo
+
+    workbook = None
+    caminho_saida = _proximo_caminho_saida(arquivo)
+    caminho_temporario = caminho_saida.with_name(
+        f".{caminho_saida.stem}.{uuid4().hex}.tmp.xlsx"
+    )
+
+    try:
+        workbook = _carregar_planilha_edicao(arquivo)
+        sheet = workbook[aba_modelo]
+        total = Decimal("0")
+
+        for linha, conta in enumerate(
+            CONTAS_APLICACAO_MODELO,
+            start=LINHA_INICIAL_CONTAS,
+        ):
+            saldo = saldos_normalizados.get(conta, Decimal("0"))
+            saldo = saldo.quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
+            sheet.cell(linha, 4).value = float(saldo)
+            total += saldo
+
+        total = total.quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
+        sheet["C61"] = float(total)
+        sheet["C1"] = date(ano_numero, mes_numero, 1)
+
+        calculo = getattr(workbook, "calculation", None)
+
+        if calculo is not None:
+            calculo.fullCalcOnLoad = True
+            calculo.forceFullCalc = True
+            calculo.calcMode = "auto"
+
+        workbook.save(caminho_temporario)
+        workbook.close()
+        workbook = None
+        os.replace(caminho_temporario, caminho_saida)
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+        if caminho_temporario.exists():
+            try:
+                caminho_temporario.unlink()
+            except OSError:
+                pass
+
+    return {
+        "ok": True,
+        "msg": "Planilha preenchida e salva com sucesso.",
+        "caminho_origem": str(arquivo),
+        "caminho_saida": str(caminho_saida),
+        "arquivo_saida": caminho_saida.name,
+        "aba_modelo": aba_modelo,
+        "periodo": {
+            "mes": f"{mes_numero:02d}",
+            "ano": str(ano_numero),
+        },
+        "contas_preenchidas": TOTAL_CONTAS_MODELO,
+        "contas_retornadas": len(saldos_normalizados),
+        "contas_zeradas": TOTAL_CONTAS_MODELO - sum(
+            1
+            for conta in CONTAS_APLICACAO_MODELO
+            if saldos_normalizados.get(conta, Decimal("0")) != 0
+        ),
+        "total": _numero_front(total),
+    }
+
+
 def _criar_verificacao(codigo: str, titulo: str, ok: bool, detalhe: str) -> dict:
     return {
         "codigo": codigo,
@@ -351,7 +495,7 @@ def analisar_planilha_saldo_contas(
             "periodo": periodo,
             "modelo_valido": modelo_valido,
             "pronto_para_automacao": modelo_valido,
-            "integracao_sap_disponivel": False,
+            "integracao_sap_disponivel": True,
             "bloco": {
                 "cabecalho": "C19:D19",
                 "contas": "C20:C60",

@@ -37,10 +37,10 @@ let ETAPAS = MONITOR_STAGES.boletos;
 
 // Valores padrão definidos pela regra de negócio atual.
 const VALORES = {
-  viabilidade: "R$ 1.038,02",
-  agua: "R$ 2.357,70",
-  esgoto: "R$ 2.357,70",
-  agua_esgoto: "R$ 2.357,70"
+  viabilidade: "R$ 1.075,08",
+  agua: "R$ 2.441,87",
+  esgoto: "R$ 2.441,87",
+  agua_esgoto: "R$ 2.441,87"
 };
 
 // Rótulos amigáveis para o campo Tipo de solicitação.
@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 const CEP_API_BASE_URL = "https://viacep.com.br/ws";
 const CEP_DEBOUNCE_MS = 450;
 const CEP_UF_PERMITIDA = "BA";
@@ -2640,18 +2640,24 @@ function formatarMoedaSaldoContas(valor) {
   });
 }
 
-function setSaldoPlanilhaBusy(busy) {
+function setSaldoPlanilhaBusy(busy, acao = "planilha") {
   state.saldoPlanilhaBusy = Boolean(busy);
   const selecionar = el("saldoPlanilhaSelecionarButton");
   const limpar = el("saldoPlanilhaLimparButton");
+  const consultar = el("saldoSapButton");
 
   if (selecionar) {
     selecionar.disabled = state.saldoPlanilhaBusy;
-    selecionar.textContent = state.saldoPlanilhaBusy ? "Analisando..." : "Selecionar";
+    selecionar.textContent = state.saldoPlanilhaBusy && acao === "planilha" ? "Analisando..." : "Selecionar";
   }
 
   if (limpar) {
     limpar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise;
+  }
+
+  if (consultar) {
+    consultar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise?.modelo_valido;
+    consultar.textContent = state.saldoPlanilhaBusy && acao === "sap" ? "Consultando..." : "Buscar saldos no SAP";
   }
 }
 
@@ -2706,6 +2712,7 @@ function renderizarAnaliseSaldoContas(analise) {
   const resumoNode = el("saldoPlanilhaResumo");
   const detalhesNode = el("saldoPlanilhaDetalhes");
   const limpar = el("saldoPlanilhaLimparButton");
+  const consultar = el("saldoSapButton");
 
   if (!analise) {
     if (arquivo) arquivo.textContent = "Nenhuma planilha selecionada";
@@ -2718,6 +2725,7 @@ function renderizarAnaliseSaldoContas(analise) {
     resumoNode?.classList.add("hidden");
     detalhesNode?.classList.add("hidden");
     if (limpar) limpar.disabled = true;
+    if (consultar) consultar.disabled = true;
     return;
   }
 
@@ -2733,6 +2741,7 @@ function renderizarAnaliseSaldoContas(analise) {
     resumoNode?.classList.add("hidden");
     detalhesNode?.classList.add("hidden");
     if (limpar) limpar.disabled = false;
+    if (consultar) consultar.disabled = true;
     return;
   }
 
@@ -2814,6 +2823,7 @@ function renderizarAnaliseSaldoContas(analise) {
   resumoNode?.classList.remove("hidden");
   detalhesNode?.classList.remove("hidden");
   if (limpar) limpar.disabled = false;
+  if (consultar) consultar.disabled = state.saldoPlanilhaBusy || !analise.modelo_valido;
   atualizarPeriodoSaldoContas();
 }
 
@@ -2829,7 +2839,7 @@ async function selecionarPlanilhaSaldoContas() {
     return;
   }
 
-  setSaldoPlanilhaBusy(true);
+  setSaldoPlanilhaBusy(true, "planilha");
   resetarEtapas();
   ativarEtapa(0, 25, "Selecionando e lendo o modelo SET.26.");
   setStatus("Analisando planilha", "running");
@@ -2859,7 +2869,7 @@ async function selecionarPlanilhaSaldoContas() {
       concluirEtapa(0, "Modelo SET.26 e 41 contas validados.");
       setStatus("Modelo validado", "success");
       log(`Planilha de saldo validada: ${resposta.arquivo}.`);
-      log(`${resposta.resumo?.contas_encontradas || 0} contas prontas para a futura consulta SAP.`);
+      log(`${resposta.resumo?.contas_encontradas || 0} contas prontas para a consulta SAP.`);
       showSimpleOperationalToast("Modelo SET.26 validado com sucesso.");
     } else {
       mostrarErroSaldoContas("A planilha foi lida, mas possui diferencas em relacao ao modelo SET.26.");
@@ -2871,6 +2881,68 @@ async function selecionarPlanilhaSaldoContas() {
     mostrarErroSaldoContas(mensagem);
     falharEtapa(0, mensagem);
     setStatus("Falha na planilha", "error");
+    log(mensagem, "error");
+  } finally {
+    setSaldoPlanilhaBusy(false);
+  }
+}
+
+async function buscarSaldosSap() {
+  if (state.saldoPlanilhaBusy) {
+    return;
+  }
+
+  limparErroSaldoContas();
+  const analise = state.saldoPlanilhaAnalise;
+  const mes = String(el("saldoMes")?.value || "").padStart(2, "0");
+  const ano = Number(el("saldoAno")?.value || 0);
+
+  if (!analise?.modelo_valido) {
+    mostrarErroSaldoContas("Selecione e valide uma planilha no modelo SET.26 antes de consultar o SAP.");
+    return;
+  }
+
+  if (!/^(0[1-9]|1[0-2])$/.test(mes) || !Number.isInteger(ano) || ano < 2020 || ano > 2099) {
+    mostrarErroSaldoContas("Informe um mes e um ano validos para a consulta.");
+    return;
+  }
+
+  if (!window.pywebview?.api?.executar_saldo_contas_sap) {
+    mostrarErroSaldoContas("A consulta SAP esta disponivel somente dentro do aplicativo desktop.");
+    return;
+  }
+
+  setSaldoPlanilhaBusy(true, "sap");
+  concluirEtapa(0, "Modelo SET.26 e 41 contas validados.");
+  ativarEtapa(1, 5, "Preparando a consulta das contas no SAP.");
+  setStatus("Consultando saldos no SAP", "running");
+
+  try {
+    const resposta = await window.pywebview.api.executar_saldo_contas_sap({
+      caminho: analise.caminho,
+      mes,
+      ano
+    });
+
+    if (!resposta?.ok) {
+      const mensagem = resposta?.msg || "Nao foi possivel consultar os saldos no SAP.";
+      mostrarErroSaldoContas(mensagem);
+      falharEtapa(Number.isInteger(state.etapaAtual) ? state.etapaAtual : 1, mensagem);
+      setStatus("Falha na consulta de saldos", "error");
+      return;
+    }
+
+    state.saldoPlanilhaAnalise = resposta.analise || analise;
+    renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
+    setStatus("Relatorio de saldos concluido", "success");
+    log(`Planilha preenchida: ${resposta.arquivo_saida}.`);
+    log(`Arquivo salvo em: ${resposta.caminho_saida}.`);
+    showSimpleOperationalToast("Consulta concluida. A copia preenchida foi salva ao lado da planilha original.");
+  } catch (error) {
+    const mensagem = error?.message || String(error || "Falha ao consultar os saldos.");
+    mostrarErroSaldoContas(mensagem);
+    falharEtapa(Number.isInteger(state.etapaAtual) ? state.etapaAtual : 1, mensagem);
+    setStatus("Falha na consulta de saldos", "error");
     log(mensagem, "error");
   } finally {
     setSaldoPlanilhaBusy(false);

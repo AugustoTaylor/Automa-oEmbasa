@@ -135,7 +135,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.5.1</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.6.0</span>
           </div>
         </div>
       </div>
@@ -831,8 +831,8 @@
         </div>
 
         <div class="account-balance-note">
-          <strong>Primeira etapa</strong>
-          <span>A se&ccedil;&atilde;o valida o modelo SET.26 e prepara as 41 contas. A consulta ao SAP ser&aacute; ativada depois do mapeamento da transa&ccedil;&atilde;o.</span>
+          <strong>Consulta automatizada</strong>
+          <span>O sistema envia as 41 contas ao SAP, busca os subtotais do per&iacute;odo e salva uma c&oacute;pia preenchida ao lado da planilha original.</span>
         </div>
 
         <div class="flow-actions account-balance-actions">
@@ -849,8 +849,9 @@
             id="saldoSapButton"
             class="primary-action"
             type="button"
+            onclick="buscarSaldosSap()"
             disabled
-            title="Dispon&iacute;vel ap&oacute;s mapear a transa&ccedil;&atilde;o e os campos do SAP."
+            title="Consulta os subtotais no SAP e gera uma c&oacute;pia preenchida da planilha."
           >
             Buscar saldos no SAP
           </button>

@@ -3,13 +3,17 @@ from __future__ import annotations
 import tempfile
 import unittest
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 from backend.relatorios.saldo_contas import (
     CONTAS_APLICACAO_MODELO,
     analisar_planilha_saldo_contas,
+    preencher_planilha_saldo_contas,
 )
 
 
@@ -40,6 +44,8 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
         sheet["J5"] = "=D61-J6"
         sheet["J6"] = "=B59"
         sheet["J7"] = "=J3+J4+J5+J6"
+        sheet["D20"].fill = PatternFill(fill_type="solid", fgColor="FFF200")
+        sheet["D20"].number_format = '#,##0.00;[Red]-#,##0.00;"-"'
         workbook.save(caminho)
         workbook.close()
         return caminho
@@ -91,6 +97,45 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
         self.assertFalse(resultado["ok"])
         self.assertIn("SET.26", resultado["msg"])
 
+    def test_preenche_copia_preservando_original_formulas_e_estilo(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha(Path(temporario), vazia=True)
+            original = caminho.read_bytes()
+            resultado = preencher_planilha_saldo_contas(
+                caminho,
+                {
+                    "11370000": Decimal("3394757.09"),
+                    "11370002": Decimal("-25.01"),
+                },
+                2,
+                2028,
+            )
+            saida = Path(resultado["caminho_saida"])
+
+            self.assertTrue(saida.exists())
+            self.assertEqual(caminho.read_bytes(), original)
+            self.assertEqual(resultado["contas_retornadas"], 2)
+            self.assertEqual(resultado["total"], 3394732.08)
+
+            workbook = load_workbook(saida, data_only=False)
+
+            try:
+                sheet = workbook["SET.26"]
+                self.assertEqual(sheet["D20"].value, 3394757.09)
+                self.assertEqual(sheet["D21"].value, -25.01)
+                self.assertEqual(sheet["D22"].value, 0)
+                self.assertEqual(sheet["C61"].value, 3394732.08)
+                self.assertEqual(sheet["D61"].value, "=SUM(D20:D60)")
+                self.assertEqual(sheet["B59"].value, "=D59+D60")
+                self.assertEqual(sheet["J7"].value, "=J3+J4+J5+J6")
+                self.assertEqual(sheet["C1"].value.date(), date(2028, 2, 1))
+                self.assertEqual(sheet["D20"].fill.fgColor.rgb, "00FFF200")
+                self.assertEqual(
+                    sheet["D20"].number_format,
+                    '#,##0.00;[Red]-#,##0.00;"-"',
+                )
+            finally:
+                workbook.close()
 
 if __name__ == "__main__":
     unittest.main()

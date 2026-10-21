@@ -1,5 +1,24 @@
 # Registro técnico de alterações
 
+## Quarta-feira, 21/10/2026 - Versao 1.6.0
+
+**Automacao SAP do Saldo de Contas**
+
+- Ativada a consulta das 41 contas da aba-modelo `SET.26` pelo SAP GUI Scripting.
+- O fluxo abre o relatorio `F00025`, usa a selecao multipla de contas, marca `Todas as partidas` e calcula automaticamente o primeiro e o ultimo dia do mes, incluindo fevereiro de ano bissexto.
+- A leitura dos subtotais usa a busca nativa por `** Conta`, iniciada na primeira pagina do relatorio, e interpreta valores brasileiros positivos e negativos com sinal final.
+- Contas que nao aparecem no resultado do SAP sao gravadas como zero, mantendo a ordem original de `C20:C60`.
+- O aplicativo agora cria uma copia `PREENCHIDO.xlsx`, grava valores numericos em `D20:D60`, atualiza o total independente em `C61` e preserva a formula de conferencia em `D61` e as demais abas/formulas do arquivo original.
+- Atualizados os valores padrao para `Viabilidade: R$ 1.075,08` e `Projetos: R$ 2.441,87`.
+- Atualizada a versao do aplicativo de `1.5.1` para `1.6.0`.
+
+**Validacao realizada**
+
+- Testes automatizados do intervalo mensal, incluindo fevereiro bissexto.
+- Testes de leitura dos subtotais SAP, valores negativos, contas ausentes e preenchimento da copia da planilha.
+- Verificacao de preservacao do arquivo original, formulas, estilos e valores numericos no arquivo gerado.
+- Validacoes de sintaxe Python e JavaScript, build empresarial e inicializacao do executavel.
+
 ## Quinta-feira, 15/10/2026 - Versao 1.5.1
 
 **Inicializacao sem SAP**
