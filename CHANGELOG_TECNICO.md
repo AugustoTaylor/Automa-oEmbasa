@@ -1,5 +1,14 @@
 # Registro técnico de alterações
 
+## Quinta-feira, 22/10/2026 - Versao 1.7.2
+
+**Perfis profissionais do desenvolvedor**
+
+- Transformado o nome `Augusto Taylor` em link interativo para o LinkedIn na tela inicial e na seção `Sobre`.
+- Adicionado link direto para o perfil do GitHub ao lado do crédito nos dois locais.
+- Os perfis são abertos no navegador padrão do Windows, preservando a tela atual do aplicativo.
+- A API aceita somente os endereços previamente cadastrados de LinkedIn e GitHub.
+
 ## Quarta-feira, 21/10/2026 - Versao 1.7.1
 
 **Grupos, interface minimalista e histórico do Saldo de Contas**

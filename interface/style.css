@@ -519,6 +519,50 @@ video {
   letter-spacing: 0.04em;
 }
 
+.developer-profile-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.developer-profile-link:hover {
+  color: var(--accent-strong);
+  border-bottom-color: currentColor;
+  transform: translateY(-1px);
+}
+
+.developer-profile-link:focus-visible {
+  outline: 3px solid rgba(0, 143, 208, 0.28);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.developer-profile-link::after {
+  content: "↗";
+  margin-left: 4px;
+  font-size: 0.78em;
+  line-height: 1;
+}
+
+.developer-link-separator {
+  display: inline-block;
+  margin: 0 5px;
+  color: var(--muted);
+}
+
+.hero-signature .developer-profile-link {
+  color: inherit;
+}
+
+.hero-signature .developer-profile-link:hover {
+  color: var(--accent);
+}
+
 .hero-signature-sub {
   margin-top: 6px;
   font-size: 0.88rem;
@@ -3063,6 +3107,10 @@ input.is-loading {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.about-section .developer-profile-link {
+  vertical-align: baseline;
 }
 
 .about-section h3 {

@@ -83,7 +83,11 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
+const DEVELOPER_PROFILES = Object.freeze({
+  linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
+  github: "https://github.com/AugustoTaylor"
+});
 const CEP_API_BASE_URL = "https://viacep.com.br/ws";
 const CEP_DEBOUNCE_MS = 450;
 const CEP_UF_PERMITIDA = "BA";
@@ -5762,6 +5766,31 @@ function normalizarValorSobre(value, fallback = "--") {
   return texto || fallback;
 }
 
+async function abrirPerfilDesenvolvedor(event, rede) {
+  event?.preventDefault();
+
+  const chave = String(rede || "").trim().toLowerCase();
+  const url = DEVELOPER_PROFILES[chave];
+
+  if (!url) {
+    return;
+  }
+
+  try {
+    if (window.pywebview?.api?.abrir_perfil_desenvolvedor) {
+      const resultado = await window.pywebview.api.abrir_perfil_desenvolvedor(chave);
+
+      if (resultado?.success) {
+        return;
+      }
+    }
+  } catch (error) {
+    console.warn("Não foi possível abrir o perfil pelo aplicativo.", error);
+  }
+
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function renderAboutRows(rows) {
   const content = el("aboutContent");
 
@@ -5800,8 +5829,24 @@ function renderAboutRows(rows) {
     <div class="about-section">
       <h3>Responsável</h3>
       <p>
-        API desenvolvida por Augusto Taylor para apoiar a Gerência de Tesouraria - FAFTA
-        na padronização e aceleração do processo operacional SAP.
+        API desenvolvida por
+        <a
+          class="developer-profile-link developer-name-link"
+          href="${DEVELOPER_PROFILES.linkedin}"
+          title="Abrir o LinkedIn de Augusto Taylor"
+          aria-label="Abrir o LinkedIn de Augusto Taylor"
+          onclick="abrirPerfilDesenvolvedor(event, 'linkedin')"
+        >Augusto Taylor</a>
+        <span class="developer-link-separator" aria-hidden="true">·</span>
+        <a
+          class="developer-profile-link"
+          href="${DEVELOPER_PROFILES.github}"
+          title="Abrir o GitHub de Augusto Taylor"
+          aria-label="Abrir o GitHub de Augusto Taylor"
+          onclick="abrirPerfilDesenvolvedor(event, 'github')"
+        >GitHub</a>
+        para apoiar a Gerência de Tesouraria - FAFTA na padronização e aceleração
+        do processo operacional SAP.
       </p>
     </div>
   `;

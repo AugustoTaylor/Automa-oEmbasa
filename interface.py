@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import re
 import threading
 import time
@@ -71,6 +72,10 @@ def _serializar_para_front(valor):
 
 _EXTRATOS_PREFERENCIAS_ARQUIVO = "extratos_caixa.json"
 _PASTA_MES_EXTRATO_RE = re.compile(r"^\d{2}\.[A-Z]{3}$", re.IGNORECASE)
+_PERFIS_DESENVOLVEDOR = {
+    "linkedin": "https://www.linkedin.com/in/augusto-taylor-425285364/",
+    "github": "https://github.com/AugustoTaylor",
+}
 
 
 class _ConfirmacaoOperacional:
@@ -154,6 +159,32 @@ class API:
 
     def set_window(self, window):
         self._window = window
+
+    # Abre somente os perfis publicos previamente autorizados no navegador padrao.
+    def abrir_perfil_desenvolvedor(self, rede):
+        chave = str(rede or "").strip().lower()
+        url = _PERFIS_DESENVOLVEDOR.get(chave)
+
+        if not url:
+            return {
+                "success": False,
+                "message": "Perfil externo não reconhecido.",
+            }
+
+        try:
+            os.startfile(url)
+            return {
+                "success": True,
+                "rede": chave,
+                "url": url,
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "rede": chave,
+                "url": url,
+                "message": f"Não foi possível abrir o perfil: {exc}",
+            }
 
     def stop(self):
         self._keep_alive.stop()
