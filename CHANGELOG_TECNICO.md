@@ -1,5 +1,18 @@
 # Registro técnico de alterações
 
+## Quarta-feira, 21/10/2026 - Versao 1.7.1
+
+**Grupos, interface minimalista e histórico do Saldo de Contas**
+
+- Incorporada a seleção dos grupos `BCO CTA MOVIMENTOS`, `BCO CTA MOV. OUTRAS`, `CENTRALIZADORA` e `APLIC. MOVIMENTO`.
+- Contas com o número destacado em amarelo são consultadas individualmente; as demais seguem em lotes.
+- Confirmada a consulta histórica: data inicial vazia e data final no último dia do mês escolhido.
+- Removidas da tela as oito verificações técnicas e a listagem extensa de contas vazias; agora apenas diferenças relevantes são exibidas antes da execução.
+- Adicionado resumo final com grupo, conta, célula preenchida, modo da consulta e valor retornado.
+- O resumo completo passa a ser salvo no histórico operacional e em seu arquivo TXT.
+- Adicionada medição do tempo total e de cada consulta SAP para diagnosticar o gargalo real sem alterar o resultado contábil.
+- A leitura incompleta continua bloqueando a gravação da planilha, evitando resultados parciais.
+
 ## Quarta-feira, 21/10/2026 - Versao 1.6.0
 
 **Automacao SAP do Saldo de Contas**
@@ -1961,3 +1974,12 @@ O sistema deve continuar usando o caminho simples que já funcionava. Se o `F3` 
 
 - `python -m py_compile backend\flows\f110_boleto.py backend\flows\f110.py`
 - Importação local das funções principais do `f110_boleto`.
+
+## Selecao de grupos e consulta individual das contas amarelas (2026-10-21)
+
+- Seletor de grupos em Saldo de Contas: BCO CTA MOVIMENTOS, BCO CTA MOV. OUTRAS, CENTRALIZADORA, APLIC. MOVIMENTO.
+- Detecta a cor amarela na celula de conta e separa essas contas da consulta em lote.
+- Faz multiplas consultas na mesma sessao SAP, tentando retornar a tela de filtro e limpar selecao antiga.
+- Preenche somente contas selecionadas, nas celulas respectivas, com copia e bloqueio de execucao parcial.
+- Mantem data inicial vazia, busca historica e espera longa ja implantadas.
+- Ver ATUALIZACAO_GRUPOS_SALDOS_SAP.md para limites e validacao necessaria no SAP real.

@@ -15,6 +15,18 @@ LINHA_FINAL_CONTAS = 60
 TOTAL_CONTAS_MODELO = LINHA_FINAL_CONTAS - LINHA_INICIAL_CONTAS + 1
 LIMITE_TAMANHO_PLANILHA_BYTES = 50 * 1024 * 1024
 
+# Intervalos fixos do modelo enviado: conta em A/C e saldo a direita.
+# A cor amarela so vale na CELULA DO NUMERO DA CONTA. Uma coluna de saldos
+# amarela (por exemplo D20:D58) nao torna as 41 aplicacoes individuais.
+GRUPOS_CONTAS = (
+    ("bco_movimentos", "BCO CTA MOVIMENTOS", 1, 2, 4, 17, "A3"),
+    ("bco_outras", "BCO CTA MOV. OUTRAS", 3, 4, 4, 17, "C3"),
+    ("centralizadora", "CENTRALIZADORA", 1, 2, 23, 28, "A22"),
+    ("aplic_movimento", "APLIC. MOVIMENTO", 3, 4, 20, 60, "C19"),
+)
+GRUPOS_IDS = frozenset(grupo[0] for grupo in GRUPOS_CONTAS)
+
+
 CONTAS_APLICACAO_MODELO = (
     "11370000",
     "11370002",
@@ -222,12 +234,103 @@ def _proximo_caminho_saida(arquivo: Path) -> Path:
         indice += 1
 
 
+
+def _conta_amarela(celula) -> bool:
+    """Somente destaque amarelo do identificador contabil determina consulta solo."""
+    try:
+        preenchimento = celula.fill
+        if preenchimento.patternType != "solid":
+            return False
+        cor = preenchimento.fgColor
+        if cor.type == "rgb" and isinstance(cor.rgb, str):
+            return cor.rgb[-6:].upper() in {"FFFF00", "FFF200", "FFEB00"}
+        if cor.type == "indexed":
+            return cor.indexed in {5, 6, 13}
+    except (AttributeError, TypeError):
+        return False
+    return False
+
+
+def ler_grupos_contas_modelo(sheet) -> list[dict]:
+    """Identifica contas e destinos no modelo, sem incluir subtotais/intervalos."""
+    grupos = []
+    contas_ja_vistas = set()
+    for chave, nome, coluna_conta, coluna_valor, inicio, fim, cabecalho in GRUPOS_CONTAS:
+        titulo = _normalizar_texto(sheet[cabecalho].value)
+        if titulo != _normalizar_texto(nome):
+            # Um modelo incompleto nao pode causar lancamentos em locais errados.
+            if chave == "aplic_movimento":
+                raise ValueError("Cabecalho APLIC. MOVIMENTO nao encontrado em C19.")
+            continue
+        itens = []
+        for linha in range(inicio, fim + 1):
+            celula_conta = sheet.cell(linha, coluna_conta)
+            conta = _normalizar_conta(celula_conta.value)
+            if not re.fullmatch(r"\d{8}", conta):
+                continue
+            if conta in contas_ja_vistas:
+                raise ValueError(f"Conta duplicada em mais de um grupo: {conta}.")
+            contas_ja_vistas.add(conta)
+            itens.append({
+                "conta": conta,
+                "celula": f"{chr(64 + coluna_valor)}{linha}",
+                "individual": _conta_amarela(celula_conta),
+            })
+        if itens:
+            grupos.append({
+                "id": chave,
+                "nome": nome,
+                "quantidade": len(itens),
+                "individuais": sum(item["individual"] for item in itens),
+                "em_lote": sum(not item["individual"] for item in itens),
+                "contas": itens,
+            })
+    return grupos
+
+
+def _validar_grupos_selecionados(grupos_disponiveis, selecionados):
+    if selecionados is None:
+        selecionados = ("aplic_movimento",)  # compatibilidade com fluxo anterior
+    if not isinstance(selecionados, (list, tuple, set, frozenset)):
+        raise ValueError("A selecao de grupos deve ser uma lista.")
+    ids = list(selecionados)
+    if not ids or any(not isinstance(chave, str) for chave in ids):
+        raise ValueError("Selecione pelo menos um grupo de contas.")
+    if len(set(ids)) != len(ids):
+        raise ValueError("Ha grupos repetidos na selecao.")
+    disponiveis = {item["id"]: item for item in grupos_disponiveis}
+    desconhecidos = set(ids) - disponiveis.keys()
+    if desconhecidos:
+        raise ValueError(f"Grupo(s) indisponivel(is) nesta planilha: {', '.join(sorted(desconhecidos))}.")
+    return [disponiveis[chave] for chave in ids]
+
+
+def planejar_consultas_saldo_contas(analise, selecionados=None) -> dict:
+    """Agrupa contas normais e separa cada conta destacada em amarelo."""
+    grupos = _validar_grupos_selecionados(analise.get("grupos") or [], selecionados)
+    lotes = []
+    destinos = {}
+    for grupo in grupos:
+        contas_lote = []
+        for item in grupo["contas"]:
+            destinos[item["conta"]] = item["celula"]
+            if not item["individual"]:
+                contas_lote.append(item["conta"])
+        if contas_lote:
+            lotes.append({"grupo": grupo["nome"], "contas": contas_lote, "individual": False})
+        for item in grupo["contas"]:
+            if item["individual"]:
+                lotes.append({"grupo": grupo["nome"], "contas": [item["conta"]], "individual": True})
+    return {"grupos": [g["id"] for g in grupos], "lotes": lotes, "destinos": destinos}
+
+
 def preencher_planilha_saldo_contas(
     caminho,
     saldos_por_conta,
     mes,
     ano,
     aba_modelo: str = ABA_MODELO_SALDO_CONTAS,
+    grupos_selecionados=None,
 ) -> dict:
     arquivo = _validar_arquivo(caminho)
     analise_origem = analisar_planilha_saldo_contas(arquivo, aba_modelo=aba_modelo)
@@ -249,19 +352,25 @@ def preencher_planilha_saldo_contas(
     if ano_numero < 2020 or ano_numero > 2099:
         raise ValueError("O ano do relatorio deve estar entre 2020 e 2099.")
 
+    plano = planejar_consultas_saldo_contas(analise_origem, grupos_selecionados)
+    destinos = plano["destinos"]
     saldos_normalizados = {}
-
     for conta_bruta, saldo_bruto in dict(saldos_por_conta or {}).items():
         conta = _normalizar_conta(conta_bruta)
-        saldo = _decimal_centavos(saldo_bruto)
-
-        if conta not in CONTAS_APLICACAO_MODELO:
+        if conta not in destinos:
             continue
-
+        saldo = _decimal_centavos(saldo_bruto)
         if saldo is None:
             raise ValueError(f"Saldo invalido retornado para a conta {conta}.")
-
         saldos_normalizados[conta] = saldo
+
+    contas_ausentes = sorted(destinos.keys() - saldos_normalizados.keys())
+    if contas_ausentes:
+        raise ValueError(
+            f"O SAP retornou apenas {len(saldos_normalizados)} de "
+            f"{len(destinos)} contas selecionadas. Planilha nao modificada. "
+            f"Faltantes: {', '.join(contas_ausentes)}."
+        )
 
     workbook = None
     caminho_saida = _proximo_caminho_saida(arquivo)
@@ -274,17 +383,23 @@ def preencher_planilha_saldo_contas(
         sheet = workbook[aba_modelo]
         total = Decimal("0")
 
-        for linha, conta in enumerate(
-            CONTAS_APLICACAO_MODELO,
-            start=LINHA_INICIAL_CONTAS,
-        ):
-            saldo = saldos_normalizados.get(conta, Decimal("0"))
-            saldo = saldo.quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
-            sheet.cell(linha, 4).value = float(saldo)
+        for conta, referencia in destinos.items():
+            saldo = saldos_normalizados[conta]
+            sheet[referencia].value = float(saldo)
             total += saldo
 
         total = total.quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
-        sheet["C61"] = float(total)
+        if "aplic_movimento" in plano["grupos"]:
+            # A celula C61 sempre foi o subtotal independente das 41 aplicacoes.
+            # Nao alteramos essa celula se o usuario consultou apenas outros grupos.
+            total_aplic = sum(
+                (saldos_normalizados[item["conta"]]
+                 for grupo in analise_origem["grupos"]
+                 if grupo["id"] == "aplic_movimento"
+                 for item in grupo["contas"]),
+                Decimal("0"),
+            )
+            sheet["C61"] = float(total_aplic.quantize(_CENTAVOS))
         sheet["C1"] = date(ano_numero, mes_numero, 1)
 
         calculo = getattr(workbook, "calculation", None)
@@ -319,13 +434,10 @@ def preencher_planilha_saldo_contas(
             "mes": f"{mes_numero:02d}",
             "ano": str(ano_numero),
         },
-        "contas_preenchidas": TOTAL_CONTAS_MODELO,
+        "grupos_selecionados": plano["grupos"],
+        "contas_preenchidas": len(destinos),
         "contas_retornadas": len(saldos_normalizados),
-        "contas_zeradas": TOTAL_CONTAS_MODELO - sum(
-            1
-            for conta in CONTAS_APLICACAO_MODELO
-            if saldos_normalizados.get(conta, Decimal("0")) != 0
-        ),
+        "contas_zeradas": sum(valor == 0 for valor in saldos_normalizados.values()),
         "total": _numero_front(total),
     }
 
@@ -385,6 +497,7 @@ def analisar_planilha_saldo_contas(
                 }
             )
 
+        grupos_disponiveis = ler_grupos_contas_modelo(sheet_formulas)
         contas_esperadas = list(CONTAS_APLICACAO_MODELO)
         contas_encontradas = [conta for conta in contas_normalizadas if conta]
         contas_ausentes = [conta for conta in contas_esperadas if conta not in contas_encontradas]
@@ -516,6 +629,7 @@ def analisar_planilha_saldo_contas(
                 "conferencia": conferencia,
             },
             "contas": contas,
+            "grupos": grupos_disponiveis,
             "verificacoes": verificacoes,
             "avisos": avisos,
         }

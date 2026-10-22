@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.1";
 const CEP_API_BASE_URL = "https://viacep.com.br/ws";
 const CEP_DEBOUNCE_MS = 450;
 const CEP_UF_PERMITIDA = "BA";
@@ -207,6 +207,7 @@ const state = {
   extratoPastaCarregada: false,
   saldoPlanilhaAnalise: null,
   saldoPlanilhaBusy: false,
+  saldoPlanilhaGruposSelecionados: ["aplic_movimento"],
   currentPdfNameNotice: "",
   lastPdfNameNotice: "",
   currentPdfNoticeId: "",
@@ -2640,11 +2641,137 @@ function formatarMoedaSaldoContas(valor) {
   });
 }
 
+function gruposSaldoContasSelecionados() {
+  return Array.from(document.querySelectorAll('#saldoGruposOpcoes input[type="checkbox"]:checked'))
+    .map((input) => input.value);
+}
+
+function atualizarSelecaoGruposSaldoContas() {
+  const disponiveis = state.saldoPlanilhaAnalise?.grupos || [];
+  const selecionados = gruposSaldoContasSelecionados();
+  state.saldoPlanilhaGruposSelecionados = selecionados;
+  const total = disponiveis
+    .filter((grupo) => selecionados.includes(grupo.id))
+    .reduce((soma, grupo) => soma + grupo.quantidade, 0);
+  const individuais = disponiveis
+    .filter((grupo) => selecionados.includes(grupo.id))
+    .reduce((soma, grupo) => soma + grupo.individuais, 0);
+  const node = el("saldoGruposResumo");
+  if (node) node.textContent = `${selecionados.length} grupo(s) | ${total} contas | ${individuais} consultas individuais`;
+  const consultar = el("saldoSapButton");
+  if (consultar) consultar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise?.modelo_valido || total === 0;
+}
+
+function renderizarGruposSaldoContas(analise) {
+  const painel = el("saldoGruposPainel");
+  const opcoes = el("saldoGruposOpcoes");
+  if (!painel || !opcoes) return;
+  opcoes.replaceChildren();
+  const grupos = analise?.modelo_valido ? (analise.grupos || []) : [];
+  painel.classList.toggle("hidden", grupos.length === 0);
+  if (!grupos.length) {
+    // Sem arquivo selecionado, preserve o padrao APLIC. MOVIMENTO.
+    // Nao apague o estado dos grupos ao ocultar o painel.
+    return;
+  }
+  for (const grupo of grupos) {
+    const label = document.createElement("label");
+    label.className = "account-group-option";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = grupo.id;
+    input.checked = state.saldoPlanilhaGruposSelecionados.includes(grupo.id);
+    input.disabled = state.saldoPlanilhaBusy;
+    input.addEventListener("change", atualizarSelecaoGruposSaldoContas);
+    const span = document.createElement("span");
+    const titulo = document.createElement("strong");
+    titulo.textContent = grupo.nome;
+    const contagem = document.createElement("small");
+    contagem.textContent = `${grupo.quantidade} contas (${grupo.individuais} individuais e ${grupo.em_lote} em lote)`;
+    span.append(titulo, contagem);
+    label.append(input, span);
+    opcoes.append(label);
+  }
+  atualizarSelecaoGruposSaldoContas();
+}
+
+function selecionarTodosGruposSaldoContas() {
+  if (state.saldoPlanilhaBusy) return;
+  document.querySelectorAll('#saldoGruposOpcoes input[type="checkbox"]').forEach((input) => { input.checked = true; });
+  atualizarSelecaoGruposSaldoContas();
+}
+
+function desmarcarGruposSaldoContas() {
+  if (state.saldoPlanilhaBusy) return;
+  document.querySelectorAll('#saldoGruposOpcoes input[type="checkbox"]').forEach((input) => { input.checked = false; });
+  atualizarSelecaoGruposSaldoContas();
+}
+
+function formatarDuracaoSaldoContas(segundos) {
+  const total = Math.max(0, Number(segundos) || 0);
+  if (total < 60) return `${Math.round(total)} s`;
+  const minutos = Math.floor(total / 60);
+  const resto = Math.round(total % 60);
+  return `${minutos} min ${String(resto).padStart(2, "0")} s`;
+}
+
+function abrirResumoFinalSaldoContas(resposta = {}) {
+  const contas = Array.isArray(resposta.contas_preenchidas) ? resposta.contas_preenchidas : [];
+  const grupos = Array.isArray(resposta.grupos_preenchidos) ? resposta.grupos_preenchidos : [];
+  const resumo = resposta.resumo || {};
+  const texto = el("saldoResumoTexto");
+  const gruposNode = el("saldoResumoGrupos");
+  const lista = el("saldoResumoLista");
+  const mes = String(el("saldoMes")?.value || "").padStart(2, "0");
+  const ano = String(el("saldoAno")?.value || "");
+  const historicoMensagem = resposta.historico_id
+    ? "O resumo foi salvo no histórico."
+    : "A planilha foi salva, mas o histórico não pôde ser registrado.";
+
+  if (!texto || !gruposNode || !lista) return;
+  texto.textContent = `${contas.length} conta(s) preenchida(s) para ${mes}/${ano} em ${formatarDuracaoSaldoContas(resumo.duracao_segundos)}. ${historicoMensagem}`;
+
+  gruposNode.replaceChildren();
+  grupos.forEach((grupo) => {
+    const item = document.createElement("div");
+    const titulo = document.createElement("strong");
+    const detalhe = document.createElement("small");
+    titulo.textContent = grupo.nome || "Grupo";
+    detalhe.textContent = `${grupo.quantidade || 0} conta(s) • ${formatarMoedaSaldoContas(grupo.total)}`;
+    item.append(titulo, detalhe);
+    gruposNode.appendChild(item);
+  });
+
+  lista.replaceChildren();
+  contas.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "saldo-summary-item";
+    const info = document.createElement("div");
+    const conta = document.createElement("strong");
+    const detalhe = document.createElement("small");
+    const valor = document.createElement("b");
+    conta.textContent = item.conta || "--";
+    detalhe.textContent = `${item.grupo || "Grupo"} • ${item.celula || "--"} • ${item.modo_consulta === "individual" ? "individual" : "em lote"}`;
+    valor.textContent = formatarMoedaSaldoContas(item.valor);
+    info.append(conta, detalhe);
+    row.append(info, valor);
+    lista.appendChild(row);
+  });
+  openModal("saldoResumoModal");
+}
+
+function closeSaldoResumoModal() {
+  closeModal("saldoResumoModal");
+}
+
 function setSaldoPlanilhaBusy(busy, acao = "planilha") {
   state.saldoPlanilhaBusy = Boolean(busy);
   const selecionar = el("saldoPlanilhaSelecionarButton");
   const limpar = el("saldoPlanilhaLimparButton");
   const consultar = el("saldoSapButton");
+  document.querySelectorAll('#saldoGruposOpcoes input[type="checkbox"]').forEach((input) => {
+    input.disabled = state.saldoPlanilhaBusy;
+  });
 
   if (selecionar) {
     selecionar.disabled = state.saldoPlanilhaBusy;
@@ -2656,7 +2783,7 @@ function setSaldoPlanilhaBusy(busy, acao = "planilha") {
   }
 
   if (consultar) {
-    consultar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise?.modelo_valido;
+    consultar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise?.modelo_valido || gruposSaldoContasSelecionados().length === 0;
     consultar.textContent = state.saldoPlanilhaBusy && acao === "sap" ? "Consultando..." : "Buscar saldos no SAP";
   }
 }
@@ -2715,6 +2842,7 @@ function renderizarAnaliseSaldoContas(analise) {
   const consultar = el("saldoSapButton");
 
   if (!analise) {
+    renderizarGruposSaldoContas(null);
     if (arquivo) arquivo.textContent = "Nenhuma planilha selecionada";
     if (caminho) {
       caminho.textContent = "Formato aceito: .xlsx. Excel ou LibreOffice nao precisam estar abertos.";
@@ -2736,6 +2864,7 @@ function renderizarAnaliseSaldoContas(analise) {
   }
 
   if (!analise.ok) {
+    renderizarGruposSaldoContas(null);
     if (badge) badge.className = "doc-badge invalid";
     if (badge) badge.textContent = "Revisar";
     resumoNode?.classList.add("hidden");
@@ -2750,7 +2879,11 @@ function renderizarAnaliseSaldoContas(analise) {
   const verificacoes = Array.isArray(analise.verificacoes) ? analise.verificacoes : [];
   const avisos = Array.isArray(analise.avisos) ? analise.avisos : [];
   const contas = Array.isArray(analise.contas) ? analise.contas : [];
-  const validacoesOk = verificacoes.filter((item) => item?.ok).length;
+  const alertasVerificacao = verificacoes
+    .filter((item) => item && !item.ok)
+    .map((item) => `${item.titulo || "Verificação"}: ${item.detalhe || "diferença encontrada"}`);
+  const alertasAvisos = avisos.filter((mensagem) => !/saldo\(s\) vazio\(s\)/i.test(String(mensagem || "")));
+  const alertas = Array.from(new Set([...alertasVerificacao, ...alertasAvisos]));
 
   if (badge) {
     badge.className = analise.modelo_valido ? "doc-badge valid" : "doc-badge invalid";
@@ -2762,7 +2895,8 @@ function renderizarAnaliseSaldoContas(analise) {
 
   if (el("saldoPlanilhaAba")) el("saldoPlanilhaAba").textContent = analise.aba_modelo || "SET.26";
   if (el("saldoPlanilhaContas")) {
-    el("saldoPlanilhaContas").textContent = `${resumo.contas_encontradas || 0} de ${resumo.contas_esperadas || 41}`;
+    const totalGrupos = (analise.grupos || []).reduce((soma, grupo) => soma + Number(grupo.quantidade || 0), 0);
+    el("saldoPlanilhaContas").textContent = `${totalGrupos || resumo.contas_encontradas || 0} disponíveis`;
   }
 
   const conferencia = el("saldoPlanilhaConferencia");
@@ -2776,54 +2910,17 @@ function renderizarAnaliseSaldoContas(analise) {
     }
   }
 
-  if (el("saldoPlanilhaValidacoesResumo")) {
-    el("saldoPlanilhaValidacoesResumo").textContent = `${validacoesOk} de ${verificacoes.length} validas`;
-  }
-
-  if (el("saldoPlanilhaSaldosResumo")) {
-    el("saldoPlanilhaSaldosResumo").textContent = `${resumo.saldos_preenchidos || 0} saldos preenchidos`;
-  }
-
-  const verificacoesNode = el("saldoPlanilhaVerificacoes");
-  if (verificacoesNode) {
-    verificacoesNode.replaceChildren(...verificacoes.map(criarItemVerificacaoSaldoContas));
-  }
-
   const avisosNode = el("saldoPlanilhaAvisos");
   if (avisosNode) {
-    avisosNode.replaceChildren(...avisos.map(criarItemAvisoSaldoContas));
-    avisosNode.classList.toggle("hidden", avisos.length === 0);
+    avisosNode.replaceChildren(...alertas.map(criarItemAvisoSaldoContas));
+    avisosNode.classList.toggle("hidden", alertas.length === 0);
   }
 
-  const contasNode = el("saldoPlanilhaContasLista");
-  if (contasNode) {
-    const rows = contas.map((item) => {
-      const row = document.createElement("div");
-      row.className = `account-list-row ${item?.status === "vazio" ? "is-empty" : ""}`;
-
-      const linha = document.createElement("span");
-      linha.textContent = String(item?.linha || "--");
-
-      const conta = document.createElement("strong");
-      conta.textContent = item?.conta || "Conta ausente";
-
-      const saldo = document.createElement("small");
-      saldo.textContent = item?.status === "vazio"
-        ? "Nao preenchido"
-        : item?.status === "zero"
-          ? "-"
-          : formatarMoedaSaldoContas(item?.saldo_atual);
-
-      row.append(linha, conta, saldo);
-      return row;
-    });
-    contasNode.replaceChildren(...rows);
-  }
-
+  renderizarGruposSaldoContas(analise);
   resumoNode?.classList.remove("hidden");
-  detalhesNode?.classList.remove("hidden");
+  detalhesNode?.classList.toggle("hidden", alertas.length === 0);
   if (limpar) limpar.disabled = false;
-  if (consultar) consultar.disabled = state.saldoPlanilhaBusy || !analise.modelo_valido;
+  if (consultar) consultar.disabled = state.saldoPlanilhaBusy || !analise.modelo_valido || gruposSaldoContasSelecionados().length === 0;
   atualizarPeriodoSaldoContas();
 }
 
@@ -2866,7 +2963,7 @@ async function selecionarPlanilhaSaldoContas() {
     }
 
     if (resposta.modelo_valido) {
-      concluirEtapa(0, "Modelo SET.26 e 41 contas validados.");
+      concluirEtapa(0, "Modelo SET.26 e grupos identificados.");
       setStatus("Modelo validado", "success");
       log(`Planilha de saldo validada: ${resposta.arquivo}.`);
       log(`${resposta.resumo?.contas_encontradas || 0} contas prontas para a consulta SAP.`);
@@ -2907,13 +3004,19 @@ async function buscarSaldosSap() {
     return;
   }
 
+  const gruposSelecionados = gruposSaldoContasSelecionados();
+  if (!gruposSelecionados.length) {
+    mostrarErroSaldoContas("Selecione pelo menos um grupo de contas antes de consultar.");
+    return;
+  }
+
   if (!window.pywebview?.api?.executar_saldo_contas_sap) {
     mostrarErroSaldoContas("A consulta SAP esta disponivel somente dentro do aplicativo desktop.");
     return;
   }
 
   setSaldoPlanilhaBusy(true, "sap");
-  concluirEtapa(0, "Modelo SET.26 e 41 contas validados.");
+  concluirEtapa(0, "Modelo e grupos de contas validados.");
   ativarEtapa(1, 5, "Preparando a consulta das contas no SAP.");
   setStatus("Consultando saldos no SAP", "running");
 
@@ -2921,7 +3024,8 @@ async function buscarSaldosSap() {
     const resposta = await window.pywebview.api.executar_saldo_contas_sap({
       caminho: analise.caminho,
       mes,
-      ano
+      ano,
+      grupos_selecionados: gruposSelecionados
     });
 
     if (!resposta?.ok) {
@@ -2937,7 +3041,12 @@ async function buscarSaldosSap() {
     setStatus("Relatorio de saldos concluido", "success");
     log(`Planilha preenchida: ${resposta.arquivo_saida}.`);
     log(`Arquivo salvo em: ${resposta.caminho_saida}.`);
-    showSimpleOperationalToast("Consulta concluida. A copia preenchida foi salva ao lado da planilha original.");
+    abrirResumoFinalSaldoContas(resposta);
+    showSimpleOperationalToast(
+      resposta.historico_id
+        ? "Consulta concluida. A copia e o resumo no histórico foram salvos."
+        : "Consulta concluida e copia salva; confira o aviso sobre o histórico."
+    );
   } catch (error) {
     const mensagem = error?.message || String(error || "Falha ao consultar os saldos.");
     mostrarErroSaldoContas(mensagem);
@@ -2955,6 +3064,8 @@ function limparPlanilhaSaldoContas() {
   }
 
   state.saldoPlanilhaAnalise = null;
+  state.saldoPlanilhaGruposSelecionados = ["aplic_movimento"];
+  closeSaldoResumoModal();
   limparErroSaldoContas();
   renderizarAnaliseSaldoContas(null);
   resetarEtapas();
@@ -4542,6 +4653,19 @@ window.mostrarAvisoOperacional = mostrarAvisoOperacional;
 
 function historyResumoItem(item = {}) {
   const dataHora = [item.data, item.hora].filter(Boolean).join(" ");
+  if (item.tipo_registro === "saldo_contas") {
+    return `
+      <button
+        type="button"
+        class="history-item"
+        onclick="selecionarHistorico('${escapeHtml(item.id)}')"
+      >
+        <span>${escapeHtml(dataHora || "Sem data")}</span>
+        <strong>Saldo de Contas • ${escapeHtml(item.periodo || "--")}</strong>
+        <small>${escapeHtml(`${item.contas_preenchidas || 0} conta(s) • ${item.total_formatado || "R$ 0,00"}`)}</small>
+      </button>
+    `;
+  }
   const pedido = item.numero_pedido || item.doc_fat || "--";
   const cliente = item.nome_cliente || "Cliente não identificado";
   const empreendimento = item.empreendimento || "Empreendimento não informado";
@@ -4586,6 +4710,49 @@ function renderHistoryDetail(registro = null) {
     detail.innerHTML = `
       <div class="history-empty">
         Selecione um pedido para visualizar cliente, documento, número SAP e texto padrão.
+      </div>
+    `;
+    return;
+  }
+
+  if (registro.tipo_registro === "saldo_contas") {
+    const grupos = Array.isArray(registro.grupos) ? registro.grupos : [];
+    const contas = Array.isArray(registro.contas) ? registro.contas : [];
+    const gruposHtml = grupos.map((grupo) => `
+      <div>
+        <strong>${escapeHtml(grupo.nome || "Grupo")}</strong>
+        <small>${escapeHtml(`${grupo.quantidade || 0} conta(s) • ${grupo.total_formatado || "R$ 0,00"}`)}</small>
+      </div>
+    `).join("");
+    const contasHtml = contas.map((item) => `
+      <div class="saldo-summary-item">
+        <div>
+          <strong>${escapeHtml(item.conta || "--")}</strong>
+          <small>${escapeHtml(`${item.grupo || "Grupo"} • ${item.celula || "--"} • ${item.modo_consulta === "individual" ? "individual" : "em lote"}`)}</small>
+        </div>
+        <b>${escapeHtml(item.valor_formatado || formatarMoedaSaldoContas(item.valor))}</b>
+      </div>
+    `).join("");
+    detail.innerHTML = `
+      <div class="history-detail-head">
+        <span>${escapeHtml([registro.data, registro.hora].filter(Boolean).join(" "))}</span>
+        <strong>Saldo de Contas • ${escapeHtml(registro.periodo || "--")}</strong>
+      </div>
+      <div class="history-field-grid">
+        ${campoHistorico("Arquivo gerado", registro.arquivo_saida)}
+        ${campoHistorico("Contas preenchidas", registro.contas_preenchidas)}
+        ${campoHistorico("Consultas SAP", registro.consultas_executadas)}
+        ${campoHistorico("Duração", formatarDuracaoSaldoContas(registro.duracao_segundos))}
+        ${campoHistorico("Total selecionado", registro.total_formatado)}
+        ${campoHistorico("Caminho", registro.caminho_saida)}
+      </div>
+      <div class="history-text-block">
+        <span>Grupos preenchidos</span>
+        <div class="saldo-summary-groups">${gruposHtml}</div>
+      </div>
+      <div class="history-text-block">
+        <span>Contas e valores</span>
+        <div class="saldo-summary-list history-saldo-list">${contasHtml}</div>
       </div>
     `;
     return;
@@ -5535,6 +5702,7 @@ const MODAL_IDS = [
   "pdfNameModal",
   "aguaEsgotoPdfModal",
   "extratoResumoModal",
+  "saldoResumoModal",
   "historyModal",
   "aboutModal",
   "batchConfirmModal",
@@ -6989,6 +7157,11 @@ document.addEventListener("keydown", (event) => {
 
   if (modalEstaAberto("historyModal")) {
     closeHistoryModal();
+    return;
+  }
+
+  if (modalEstaAberto("saldoResumoModal")) {
+    closeSaldoResumoModal();
     return;
   }
 

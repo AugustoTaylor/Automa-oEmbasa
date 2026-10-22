@@ -47,6 +47,14 @@ def _texto(valor: Any, fallback: str = "") -> str:
     return texto or fallback
 
 
+def _formatar_moeda_brl(valor: Any) -> str:
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return _texto(valor, "R$ 0,00")
+    return f"R$ {numero:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _slug(valor: Any, fallback: str = "registro") -> str:
     texto = _texto(valor, fallback).upper()
     texto = re.sub(r"[^\w\s.-]", "", texto, flags=re.UNICODE)
@@ -347,7 +355,113 @@ def _montar_registro(dados: dict[str, Any], resultado: dict[str, Any]) -> dict[s
     }
 
 
+def _montar_registro_saldo_contas(resultado: dict[str, Any]) -> dict[str, Any]:
+    agora = _agora()
+    mes = str(resultado.get("mes") or "").zfill(2)
+    ano = str(resultado.get("ano") or "")
+    periodo = f"{mes}/{ano}" if mes and ano else "Período não informado"
+    contas = []
+
+    for item in resultado.get("contas") or []:
+        if not isinstance(item, dict):
+            continue
+        contas.append(
+            {
+                "conta": _texto(item.get("conta")),
+                "grupo": _texto(item.get("grupo"), "Grupo não informado"),
+                "celula": _texto(item.get("celula")),
+                "modo_consulta": _texto(item.get("modo_consulta"), "lote"),
+                "valor": item.get("valor", 0),
+                "valor_formatado": _formatar_moeda_brl(item.get("valor", 0)),
+            }
+        )
+
+    grupos = []
+    for grupo in resultado.get("grupos") or []:
+        if not isinstance(grupo, dict):
+            continue
+        grupos.append(
+            {
+                "id": _texto(grupo.get("id")),
+                "nome": _texto(grupo.get("nome"), "Grupo"),
+                "quantidade": int(grupo.get("quantidade") or 0),
+                "total": grupo.get("total", 0),
+                "total_formatado": _formatar_moeda_brl(grupo.get("total", 0)),
+            }
+        )
+
+    registro_id = f"{agora.strftime('%Y%m%d%H%M%S%f')}_saldo_contas"
+    arquivo_saida = _texto(resultado.get("arquivo_saida"), "Planilha preenchida")
+    texto_busca = " ".join(
+        [periodo, arquivo_saida]
+        + [grupo["nome"] for grupo in grupos]
+        + [item["conta"] for item in contas]
+    )
+    return {
+        "id": registro_id,
+        "tipo_registro": "saldo_contas",
+        "titulo": "Saldo de Contas",
+        "data": agora.strftime("%Y-%m-%d"),
+        "hora": agora.strftime("%H:%M:%S"),
+        "data_hora": agora.isoformat(timespec="seconds"),
+        "usuario": _texto(getpass.getuser(), "usuario"),
+        "periodo": periodo,
+        "mes": mes,
+        "ano": ano,
+        "data_final": _texto(resultado.get("data_final")),
+        "arquivo_origem": _texto(resultado.get("arquivo_origem")),
+        "arquivo_saida": arquivo_saida,
+        "caminho_saida": _texto(resultado.get("caminho_saida")),
+        "grupos": grupos,
+        "contas": contas,
+        "contas_preenchidas": len(contas),
+        "consultas_executadas": int(resultado.get("consultas_executadas") or 0),
+        "contas_individuais": int(resultado.get("contas_individuais") or 0),
+        "duracao_segundos": round(float(resultado.get("duracao_segundos") or 0), 2),
+        "tempos_consultas": list(resultado.get("tempos_consultas") or []),
+        "total": resultado.get("total", 0),
+        "total_formatado": _formatar_moeda_brl(resultado.get("total", 0)),
+        "tipo_solicitacao_label": "Saldo de Contas",
+        "numero_pedido": f"Saldo {periodo}",
+        "nome_cliente": "Relatório contábil",
+        "texto_busca": texto_busca,
+        "origem": "EmbasaPedidosSAP",
+    }
+
+
 def _conteudo_txt(registro: dict[str, Any]) -> str:
+    if registro.get("tipo_registro") == "saldo_contas":
+        linhas = [
+            "HISTÓRICO DE SALDO DE CONTAS - EMBASA",
+            "=" * 44,
+            f"Data/Hora: {registro.get('data_hora', '')}",
+            f"Usuário Windows: {registro.get('usuario', '')}",
+            f"Período: {registro.get('periodo', '')}",
+            f"Data inicial SAP: em branco (histórico completo)",
+            f"Data final SAP: {registro.get('data_final', '')}",
+            f"Arquivo de origem: {registro.get('arquivo_origem', '')}",
+            f"Arquivo gerado: {registro.get('caminho_saida', '')}",
+            f"Consultas SAP: {registro.get('consultas_executadas', 0)}",
+            f"Duração: {registro.get('duracao_segundos', 0)} s",
+            f"Total selecionado: {registro.get('total_formatado', '')}",
+            "",
+            "GRUPOS",
+        ]
+        for grupo in registro.get("grupos") or []:
+            linhas.append(
+                f"- {grupo.get('nome', '')}: {grupo.get('quantidade', 0)} conta(s) | "
+                f"{grupo.get('total_formatado', '')}"
+            )
+        linhas.extend(["", "CONTAS PREENCHIDAS"])
+        for item in registro.get("contas") or []:
+            linhas.append(
+                f"- {item.get('conta', '')} | {item.get('grupo', '')} | "
+                f"{item.get('celula', '')} | {item.get('modo_consulta', '')} | "
+                f"{item.get('valor_formatado', '')}"
+            )
+        linhas.append("")
+        return "\n".join(linhas)
+
     endereco = registro.get("endereco") or {}
     linhas = [
         "HISTÓRICO DE PEDIDO SAP - EMBASA",
@@ -449,7 +563,54 @@ def registrar_historico_pedido(
         return None
 
 
+def registrar_historico_saldo_contas(
+    resultado: dict[str, Any],
+    logger=None,
+) -> dict[str, Any] | None:
+    if not get_setting("history", "enabled", default=True):
+        return None
+
+    registro = _montar_registro_saldo_contas(resultado or {})
+    try:
+        txt_path = _salvar_txt(registro)
+        registro["txt_path"] = str(txt_path)
+        db_path = _db_path()
+        with _file_lock(db_path):
+            registros = _ler_banco()
+            registros.append(registro)
+            max_entries = int(get_setting("history", "max_entries", default=5000) or 5000)
+            _salvar_banco(registros[-max_entries:])
+        if logger:
+            logger.add(
+                -1,
+                f"Resumo de saldo de contas registrado no histórico ({registro['periodo']}).",
+                publico=True,
+            )
+        return registro
+    except Exception as exc:
+        if logger:
+            logger.add(
+                -1,
+                f"Não foi possível registrar o histórico de saldo de contas: {exc}",
+                nivel="DEBUG",
+                publico=False,
+            )
+        return None
+
+
 def _registro_resumo(registro: dict[str, Any]) -> dict[str, Any]:
+    if registro.get("tipo_registro") == "saldo_contas":
+        return {
+            "id": registro.get("id"),
+            "tipo_registro": "saldo_contas",
+            "data": registro.get("data"),
+            "hora": registro.get("hora"),
+            "titulo": "Saldo de Contas",
+            "periodo": registro.get("periodo"),
+            "arquivo_saida": registro.get("arquivo_saida"),
+            "contas_preenchidas": registro.get("contas_preenchidas"),
+            "total_formatado": registro.get("total_formatado"),
+        }
     return {
         "id": registro.get("id"),
         "data": registro.get("data"),
@@ -495,6 +656,7 @@ def listar_historico_pedidos(filtro: str = "", limite: int | None = None) -> lis
                 )
             )
             or filtro_norm in _texto((registro.get("endereco") or {}).get("empreendimento")).upper()
+            or filtro_norm in _texto(registro.get("texto_busca")).upper()
         ]
 
     return [_registro_resumo(registro) for registro in registros[:limite]]

@@ -135,7 +135,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.6.0</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.7.1</span>
           </div>
         </div>
       </div>
@@ -789,6 +789,22 @@
           </button>
         </div>
 
+        <div id="saldoGruposPainel" class="account-group-picker hidden">
+          <div class="account-balance-section-head">
+            <div>
+              <span>Grupos para consultar</span>
+              <strong>Selecione as contas desejadas</strong>
+            </div>
+            <div class="account-group-actions">
+              <button type="button" class="ghost-action" onclick="selecionarTodosGruposSaldoContas()">Todos</button>
+              <button type="button" class="ghost-action" onclick="desmarcarGruposSaldoContas()">Nenhum</button>
+            </div>
+          </div>
+          <div id="saldoGruposOpcoes" class="account-group-options"></div>
+          <small id="saldoGruposResumo" class="account-group-summary"></small>
+          <small class="account-group-hint">Numero da conta em amarelo: consulta individual. Demais contas: consulta em lote.</small>
+        </div>
+
         <p id="saldoPlanilhaError" class="field-message hidden"></p>
 
         <div id="saldoPlanilhaResumo" class="account-balance-summary hidden">
@@ -810,29 +826,19 @@
           </div>
         </div>
 
-        <div id="saldoPlanilhaDetalhes" class="account-balance-details hidden">
+        <div id="saldoPlanilhaDetalhes" class="account-balance-details account-balance-alerts hidden">
           <div class="account-balance-section-head">
             <div>
-              <span>Valida&ccedil;&otilde;es do modelo</span>
-              <strong id="saldoPlanilhaValidacoesResumo">Aguardando</strong>
+              <span>Aten&ccedil;&atilde;o necess&aacute;ria</span>
+              <strong id="saldoPlanilhaAlertasResumo">Diferen&ccedil;as encontradas na planilha</strong>
             </div>
           </div>
-          <div id="saldoPlanilhaVerificacoes" class="account-check-list"></div>
-
           <div id="saldoPlanilhaAvisos" class="account-warning-list hidden"></div>
-
-          <div class="account-balance-section-head account-list-head">
-            <div>
-              <span>Contas encontradas</span>
-              <strong id="saldoPlanilhaSaldosResumo">0 saldos preenchidos</strong>
-            </div>
-          </div>
-          <div id="saldoPlanilhaContasLista" class="account-list-preview"></div>
         </div>
 
         <div class="account-balance-note">
           <strong>Consulta automatizada</strong>
-          <span>O sistema envia as 41 contas ao SAP, busca os subtotais do per&iacute;odo e salva uma c&oacute;pia preenchida ao lado da planilha original.</span>
+          <span>Escolha os grupos desejados. O sistema consulta as contas em lote, exceto as contas com numero amarelo (consultadas uma a uma), utilizando todo o historico ate o ultimo dia do mes. Somente os grupos selecionados sao preenchidos em uma copia da planilha.</span>
         </div>
 
         <div class="flow-actions account-balance-actions">
@@ -1383,6 +1389,25 @@
     </div>
   </div>
 
+  <div id="saldoResumoModal" class="contact-success-modal hidden" aria-live="polite">
+    <div class="contact-backdrop" onclick="closeSaldoResumoModal()"></div>
+
+    <div class="contact-success-card saldo-summary-card">
+      <p class="section-kicker">Saldo de Contas</p>
+      <h2>Planilha preenchida</h2>
+      <p id="saldoResumoTexto">Confira as contas e os valores gravados.</p>
+      <div id="saldoResumoGrupos" class="saldo-summary-groups"></div>
+      <div id="saldoResumoLista" class="saldo-summary-list"></div>
+      <button
+        type="button"
+        class="primary-action"
+        onclick="closeSaldoResumoModal()"
+      >
+        Fechar
+      </button>
+    </div>
+  </div>
+
   <div id="historyModal" class="contact-success-modal hidden">
     <div class="contact-backdrop" onclick="closeHistoryModal()"></div>
 
@@ -1400,7 +1425,7 @@
         <input
           id="historySearch"
           type="search"
-          placeholder="Buscar por data, pedido, cliente, CPF/CNPJ ou empreendimento"
+          placeholder="Buscar por data, pedido, cliente, período ou conta"
           oninput="scheduleHistorySearch()"
           onkeydown="handleHistorySearchKey(event)"
         />

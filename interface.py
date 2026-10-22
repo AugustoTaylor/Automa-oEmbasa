@@ -34,12 +34,14 @@ from backend.history import (
     listar_historico_pedidos,
     obter_historico_pedido,
     registrar_historico_pedido,
+    registrar_historico_saldo_contas,
 )
 from backend.logger import Logger
 from backend.relatorios.saldo_contas import (
     ABA_MODELO_SALDO_CONTAS,
     CONTAS_APLICACAO_MODELO,
     analisar_planilha_saldo_contas as analisar_arquivo_saldo_contas,
+    planejar_consultas_saldo_contas,
     preencher_planilha_saldo_contas,
 )
 from backend.sap_connection import conectar_sap
@@ -990,6 +992,7 @@ class API:
         def worker():
             add_original = self._instalar_logger_tempo_real()
             pythoncom = None
+            inicio_total = time.monotonic()
 
             try:
                 try:
@@ -1014,64 +1017,115 @@ class API:
                         "A planilha precisa passar pela validacao do modelo SET.26 antes da consulta."
                     )
 
+                plano = planejar_consultas_saldo_contas(
+                    analise,
+                    payload.get("grupos_selecionados"),
+                )
+                etapas = plano["lotes"]
+                destinos = plano["destinos"]
+                contas_individuais = sum(etapa["individual"] for etapa in etapas)
                 self._logger.clear()
                 self._emitir_status("Consultando saldos no SAP", "running")
                 self._emitir_progresso(
-                    "PLANILHA",
-                    "done",
-                    "Modelo SET.26 e 41 contas validados.",
-                    100,
+                    "PLANILHA", "done",
+                    f"{len(destinos)} contas de {len(plano['grupos'])} grupo(s) validadas.", 100,
                 )
                 self._logger.add(
                     -1,
-                    f"Consultando {len(CONTAS_APLICACAO_MODELO)} contas no SAP.",
+                    f"Consultando {len(destinos)} contas em {len(etapas)} consultas SAP "
+                    f"({contas_individuais} individuais destacadas em amarelo).",
                     publico=True,
                 )
-
+                saldos = {}
+                tempos_consultas = []
                 with self._sap_activity_lock:
                     session = conectar_sap()
-                    consulta = executar_consulta_saldos_sap(
-                        session,
-                        CONTAS_APLICACAO_MODELO,
-                        mes,
-                        ano,
-                        logger=self._logger,
-                        progress_callback=self._emitir_progresso,
-                    )
+                    for indice, etapa in enumerate(etapas, start=1):
+                        descricao = (
+                            etapa["contas"][0] if etapa["individual"]
+                            else f"lote com {len(etapa['contas'])} contas"
+                        )
+                        self._emitir_progresso(
+                            "SAP_SALDOS", "running",
+                            f"Consulta {indice}/{len(etapas)}: {etapa['grupo']} - {descricao}",
+                            int(100 * (indice - 1) / len(etapas)),
+                        )
+                        self._logger.add(
+                            -1, f"{indice}/{len(etapas)} - {etapa['grupo']}: {descricao}",
+                            publico=True,
+                        )
+                        # O fluxo continua serial na MESMA sessao SAP.
+                        # Nao tenta gravar a planilha antes de finalizar todas.
+                        inicio_consulta = time.monotonic()
+                        consulta_parcial = executar_consulta_saldos_sap(
+                            session, etapa["contas"], mes, ano,
+                            logger=self._logger,
+                            # Evita que o progresso interno reinicie o progresso global.
+                            progress_callback=None,
+                            limpar_contas_anteriores=indice > 1,
+                        )
+                        duracao_consulta = round(time.monotonic() - inicio_consulta, 2)
+                        tempos_consultas.append(
+                            {
+                                "ordem": indice,
+                                "grupo": etapa["grupo"],
+                                "descricao": descricao,
+                                "duracao_segundos": duracao_consulta,
+                            }
+                        )
+                        for conta, valor in consulta_parcial["saldos"].items():
+                            if conta in saldos:
+                                raise RuntimeError(f"Conta {conta} duplicada entre consultas.")
+                            saldos[conta] = valor
+                        self._emitir_progresso(
+                            "SAP_SALDOS", "running",
+                            f"{len(saldos)}/{len(destinos)} saldos confirmados.",
+                            int(100 * indice / len(etapas)),
+                        )
+                        self._logger.add(
+                            -1,
+                            f"Consulta {indice}/{len(etapas)} concluida em {duracao_consulta:.1f} s.",
+                            publico=True,
+                        )
 
-                saldos = consulta.get("saldos") or {}
+                faltantes = sorted(destinos.keys() - saldos.keys())
+                if faltantes:
+                    raise RuntimeError(
+                        "Consulta incompleta, nenhuma planilha foi alterada. "
+                        f"Contas faltantes: {', '.join(faltantes)}"
+                    )
                 self._emitir_progresso(
-                    "CONFERIR_SALDOS",
-                    "running",
-                    "Somando os subtotais e preenchendo zeros nas contas ausentes.",
-                    35,
+                    "CONFERIR_SALDOS", "running",
+                    f"Conferindo {len(saldos)} subtotais, inclusive valores zero.", 35,
                 )
                 total = sum(saldos.values(), start=0)
                 total_formatado = (
-                    f"{float(total):,.2f}"
-                    .replace(",", "X")
-                    .replace(".", ",")
-                    .replace("X", ".")
+                    f"{float(total):,.2f}".replace(",", "X")
+                    .replace(".", ",").replace("X", ".")
                 )
                 self._emitir_progresso(
-                    "CONFERIR_SALDOS",
-                    "done",
-                    f"Total independente conferido: R$ {total_formatado}.",
-                    100,
+                    "CONFERIR_SALDOS", "done",
+                    f"Total das contas selecionadas: R$ {total_formatado}.", 100,
                 )
                 self._emitir_progresso(
-                    "SALVAR_RELATORIO",
-                    "running",
-                    "Criando uma copia preenchida sem alterar o arquivo original.",
-                    40,
+                    "SALVAR_RELATORIO", "running",
+                    "Criando copia preenchida (sem alterar grupos nao selecionados).", 40,
                 )
                 planilha = preencher_planilha_saldo_contas(
-                    caminho,
-                    saldos,
-                    mes,
-                    ano,
+                    caminho, saldos, mes, ano,
                     aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                    grupos_selecionados=plano["grupos"],
                 )
+                consulta = {
+                    "contas_consultadas": len(destinos),
+                    "contas_retornadas": len(saldos),
+                    "consultas_executadas": len(etapas),
+                    "contas_individuais": contas_individuais,
+                    "grupos_selecionados": plano["grupos"],
+                    "data_inicial": "",
+                    "data_final": consulta_parcial["data_final"],
+                    "tempos_consultas": tempos_consultas,
+                }
                 analise_saida = analisar_arquivo_saldo_contas(
                     planilha["caminho_saida"],
                     aba_modelo=ABA_MODELO_SALDO_CONTAS,
@@ -1087,6 +1141,59 @@ class API:
                     f"Relatorio salvo em {planilha['caminho_saida']}",
                     publico=True,
                 )
+                grupos_selecionados = set(plano["grupos"])
+                contas_resumo = []
+                grupos_resumo = []
+                for grupo in analise.get("grupos") or []:
+                    if grupo.get("id") not in grupos_selecionados:
+                        continue
+                    total_grupo = 0
+                    quantidade_grupo = 0
+                    for item in grupo.get("contas") or []:
+                        conta = item.get("conta")
+                        if conta not in saldos:
+                            continue
+                        valor = saldos[conta]
+                        total_grupo += valor
+                        quantidade_grupo += 1
+                        contas_resumo.append(
+                            {
+                                "conta": conta,
+                                "grupo": grupo.get("nome"),
+                                "celula": item.get("celula"),
+                                "modo_consulta": "individual" if item.get("individual") else "lote",
+                                "valor": float(valor),
+                            }
+                        )
+                    grupos_resumo.append(
+                        {
+                            "id": grupo.get("id"),
+                            "nome": grupo.get("nome"),
+                            "quantidade": quantidade_grupo,
+                            "total": float(total_grupo),
+                        }
+                    )
+
+                duracao_total = round(time.monotonic() - inicio_total, 2)
+                dados_historico = {
+                    "mes": mes,
+                    "ano": ano,
+                    "data_final": consulta["data_final"],
+                    "arquivo_origem": analise.get("arquivo"),
+                    "arquivo_saida": planilha["arquivo_saida"],
+                    "caminho_saida": planilha["caminho_saida"],
+                    "grupos": grupos_resumo,
+                    "contas": contas_resumo,
+                    "consultas_executadas": len(etapas),
+                    "contas_individuais": contas_individuais,
+                    "duracao_segundos": duracao_total,
+                    "tempos_consultas": tempos_consultas,
+                    "total": float(total),
+                }
+                registro_historico = registrar_historico_saldo_contas(
+                    dados_historico,
+                    logger=self._logger,
+                )
                 self._emitir_status("Relatorio de saldos concluido", "success")
 
                 resultado_final.update(
@@ -1097,10 +1204,17 @@ class API:
                             "caminho_saida": planilha["caminho_saida"],
                             "arquivo_saida": planilha["arquivo_saida"],
                             "analise": analise_saida,
+                            "contas_preenchidas": contas_resumo,
+                            "grupos_preenchidos": grupos_resumo,
+                            "historico_id": (
+                                registro_historico.get("id")
+                                if registro_historico else None
+                            ),
                             "resumo": {
                                 **consulta,
                                 "saldos": None,
                                 "total": planilha["total"],
+                                "duracao_segundos": duracao_total,
                             },
                             "logs": self._logger.get_logs(public_only=True),
                             "tempo_real": True,

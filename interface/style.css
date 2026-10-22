@@ -3709,3 +3709,112 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
     max-height: 150px;
   }
 }
+
+/* Selecao de grupos de contas - tela Saldo de Contas */
+.account-group-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border, #d4dde5);
+  border-radius: 13px;
+  background: var(--surface-subtle, rgba(110, 150, 180, 0.06));
+}
+.account-group-picker.hidden { display: none; }
+.account-group-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.account-group-option {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--border, #d4dde5);
+  border-radius: 9px; padding: 8px 9px; cursor: pointer;
+  background: var(--surface, transparent);
+  min-width: 0;
+}
+.account-group-option:has(input:checked) { border-color: #247ca6; background: rgba(25,140,190,.07); }
+.account-group-option input { width: 17px; height: 17px; margin: 3px 0 0; flex-shrink: 0; accent-color: #007ca6; }
+.account-group-option span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.account-group-option strong { font-size: 11px; line-height: 1.35; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.account-group-option small, .account-group-summary, .account-group-hint { font-size: 11px; line-height: 1.45; opacity: .82; }
+.account-group-summary { font-weight: 700; }
+.account-group-actions { display: flex; gap: 7px; }
+.account-group-actions .ghost-action { padding: 7px 10px; min-height: auto; font-size: 11px; }
+@media (max-width: 640px) {
+  .account-group-options { grid-template-columns: 1fr; }
+  .account-group-actions { flex-wrap: wrap; }
+}
+
+/* Resumo final e histórico do Saldo de Contas */
+.account-balance-alerts {
+  border-color: rgba(203, 139, 0, 0.34);
+  background: rgba(203, 139, 0, 0.07);
+}
+.saldo-summary-card {
+  width: min(780px, calc(100vw - 32px));
+  max-height: 88vh;
+  margin-top: 6vh;
+  overflow: hidden;
+  text-align: left;
+}
+.saldo-summary-card > .section-kicker,
+.saldo-summary-card > h2,
+.saldo-summary-card > p {
+  text-align: center;
+}
+.saldo-summary-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.saldo-summary-groups > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.saldo-summary-groups strong { font-size: 0.78rem; }
+.saldo-summary-groups small { color: var(--muted); font-size: 0.72rem; }
+.saldo-summary-list {
+  max-height: min(48vh, 430px);
+  margin-bottom: 18px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  text-align: left;
+}
+.saldo-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.saldo-summary-item:last-child { border-bottom: 0; }
+.saldo-summary-item > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.saldo-summary-item strong { font-size: 0.8rem; }
+.saldo-summary-item small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+.saldo-summary-item b {
+  flex-shrink: 0;
+  color: var(--accent-strong, #087da5);
+  font-size: 0.8rem;
+}
+.history-saldo-list { max-height: 360px; margin-bottom: 0; }
+@media (max-width: 640px) {
+  .saldo-summary-card { margin-top: 3vh; max-height: 94vh; padding: 20px; }
+  .saldo-summary-groups { grid-template-columns: 1fr; }
+  .saldo-summary-item { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
