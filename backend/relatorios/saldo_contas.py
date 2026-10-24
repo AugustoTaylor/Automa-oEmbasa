@@ -26,6 +26,10 @@ GRUPOS_CONTAS = (
 )
 GRUPOS_IDS = frozenset(grupo[0] for grupo in GRUPOS_CONTAS)
 
+# A conta 11311000 possui volume historico excessivo no SAP e causa timeout.
+# Ela permanece visivel no modelo, mas nao participa da consulta nem da escrita.
+CONTAS_IGNORADAS_SAP = frozenset({"11311000"})
+
 
 CONTAS_APLICACAO_MODELO = (
     "11370000",
@@ -267,6 +271,8 @@ def ler_grupos_contas_modelo(sheet) -> list[dict]:
             celula_conta = sheet.cell(linha, coluna_conta)
             conta = _normalizar_conta(celula_conta.value)
             if not re.fullmatch(r"\d{8}", conta):
+                continue
+            if conta in CONTAS_IGNORADAS_SAP:
                 continue
             if conta in contas_ja_vistas:
                 raise ValueError(f"Conta duplicada em mais de um grupo: {conta}.")

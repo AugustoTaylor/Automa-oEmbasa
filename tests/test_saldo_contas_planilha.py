@@ -109,7 +109,7 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
             self.assertEqual([g["id"] for g in dados["grupos"]], [
                 "bco_movimentos", "bco_outras", "centralizadora", "aplic_movimento",
             ])
-            self.assertEqual(grupos["bco_movimentos"]["quantidade"], 2)
+            self.assertEqual(grupos["bco_movimentos"]["quantidade"], 1)
             self.assertEqual(grupos["bco_movimentos"]["individuais"], 1)
             self.assertEqual(grupos["centralizadora"]["individuais"], 1)
             self.assertEqual(grupos["aplic_movimento"]["quantidade"], 41)
@@ -117,8 +117,12 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
             plano = planejar_consultas_saldo_contas(dados, [
                 "bco_movimentos", "centralizadora", "aplic_movimento",
             ])
-            self.assertEqual(len(plano["lotes"]), 5)  # 3 lotes + 2 solos
-            self.assertEqual(len(plano["destinos"]), 45)
+            self.assertEqual(len(plano["lotes"]), 4)  # 2 lotes + 2 solos
+            self.assertEqual(len(plano["destinos"]), 44)
+            self.assertNotIn("11311000", plano["destinos"])
+            self.assertFalse(any(
+                "11311000" in lote["contas"] for lote in plano["lotes"]
+            ))
             self.assertEqual(plano["destinos"]["11311305"], "B23")
             self.assertEqual(plano["destinos"]["11370003"], "D22")
 

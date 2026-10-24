@@ -1,5 +1,13 @@
 # Registro técnico de alterações
 
+## Sábado, 24/10/2026 - Versao 1.7.3
+
+**Exclusão da conta SAP com timeout**
+
+- Retirada a conta `11311000` das consultas do grupo `BCO CTA MOVIMENTOS`.
+- A conta continua visível no modelo mensal, mas não é enviada ao SAP, preenchida pelo aplicativo nem incluída no histórico da execução.
+- Mantido o procedimento das demais contas: números amarelos seguem individualmente e números sem destaque seguem em lote.
+
 ## Quinta-feira, 22/10/2026 - Versao 1.7.2
 
 **Perfis profissionais do desenvolvedor**
