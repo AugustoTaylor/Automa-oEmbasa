@@ -1,5 +1,5 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.2
+Versão: 1.8.3
 Atualizado em: 28/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
@@ -44,7 +44,8 @@ O arquivo de usuários não contém senhas legíveis. Ele guarda somente hash PB
 A opção "Lembrar senha" grava no computador do usuário apenas um token criptografado pela proteção de dados do Windows.
 Não copie, edite manualmente nem apague esses arquivos durante uma atualização.
 
-Na primeira utilização, o funcionário deve escolher Cadastrar e informar matrícula e uma senha com ao menos 8 caracteres, letras e números.
+Na primeira utilização, o funcionário deve escolher Cadastrar e informar uma matrícula de 4 a 7 caracteres e uma senha com ao menos 8 caracteres, letras e números.
+O cadastro não abre o sistema automaticamente: depois de criar o acesso, o funcionário deve entrar pela tela de login. A opção "Lembrar senha" é aplicada somente nesse login.
 Nas utilizações seguintes, o sistema faz o check-in na base compartilhada. Se a pasta da rede estiver indisponível, o acesso é bloqueado em vez de criar um cadastro local paralelo.
 
 Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.

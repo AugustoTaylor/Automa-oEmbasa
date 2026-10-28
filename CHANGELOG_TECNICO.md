@@ -1,5 +1,12 @@
 # Registro técnico de alterações
 
+## Quarta-feira, 28/10/2026 - Versao 1.8.3
+
+- Matriculas de acesso agora aceitam ate 7 caracteres, incluindo formatos alfanumericos como `e397156`.
+- O cadastro cria somente a conta e nao inicia sessao nem emite token de acesso lembrado.
+- Depois de cadastrar, a interface retorna ao login, preenche a matricula criada e solicita a senha para liberar o sistema.
+- A opcao `Lembrar senha` permanece disponivel apenas no login.
+
 ## Quarta-feira, 28/10/2026 - Versao 1.8.2
 
 - O nome do modelo e os nomes dos grupos detectados ficam visiveis, mas bloqueados para edicao.

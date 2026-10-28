@@ -23,6 +23,8 @@ _PBKDF2_ITERACOES = 390_000
 _MAX_FALHAS = 5
 _BLOQUEIO_MINUTOS = 15
 _MAX_TOKENS_POR_USUARIO = 5
+_MIN_MATRICULA_CARACTERES = 4
+_MAX_MATRICULA_CARACTERES = 7
 
 
 def _agora() -> datetime:
@@ -34,9 +36,9 @@ def _iso(tempo: datetime | None = None) -> str:
 
 
 def _matricula(valor: Any) -> str:
-    texto = "".join(caractere for caractere in str(valor or "").strip() if caractere.isdigit())
-    if not 4 <= len(texto) <= 12:
-        raise ValueError("A matricula deve possuir entre 4 e 12 digitos.")
+    texto = str(valor or "").strip().casefold()
+    if not _MIN_MATRICULA_CARACTERES <= len(texto) <= _MAX_MATRICULA_CARACTERES:
+        raise ValueError("A matricula deve possuir entre 4 e 7 caracteres.")
     return texto
 
 
@@ -281,22 +283,22 @@ def cadastrar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dict
                 "ativo": True,
                 "criado_em": agora,
                 "atualizado_em": agora,
-                "ultimo_login": agora,
-                "ultimo_checkin": agora,
+                "ultimo_login": "",
+                "ultimo_checkin": "",
                 "ultima_versao": str(versao_app or ""),
                 "falhas_consecutivas": 0,
                 "bloqueado_ate": "",
                 "tokens": [],
             }
             banco["usuarios"].append(usuario)
-            token_local = _emitir_token(usuario) if lembrar else None
             _salvar_banco(banco)
-        lembrado, aviso = _salvar_lembranca_ou_aviso(token_local)
         return {
             "ok": True,
             "usuario": _publico(usuario),
-            "lembrado": lembrado,
-            "aviso": aviso,
+            "lembrado": False,
+            "aviso": "",
+            "login_required": True,
+            "msg": "Cadastro concluido. Entre com sua matricula e senha para acessar o sistema.",
         }
 
 

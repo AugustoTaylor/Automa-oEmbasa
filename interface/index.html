@@ -26,7 +26,7 @@
       <form id="authLoginForm" class="auth-form" onsubmit="entrarNoSistema(event)">
         <label class="field">
           <span>Matricula</span>
-          <input id="authLoginMatricula" type="text" inputmode="numeric" autocomplete="username" maxlength="12" placeholder="Digite sua matricula" required />
+          <input id="authLoginMatricula" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="4" maxlength="7" placeholder="Ate 7 caracteres" required />
         </label>
         <label class="field">
           <span>Senha</span>
@@ -42,7 +42,7 @@
       <form id="authCadastroForm" class="auth-form hidden" onsubmit="cadastrarNoSistema(event)">
         <label class="field">
           <span>Matricula</span>
-          <input id="authCadastroMatricula" type="text" inputmode="numeric" autocomplete="username" maxlength="12" placeholder="Somente numeros" required />
+          <input id="authCadastroMatricula" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="4" maxlength="7" placeholder="Ate 7 caracteres" required />
         </label>
         <label class="field">
           <span>Senha</span>
@@ -52,14 +52,12 @@
           <span>Confirmar senha</span>
           <input id="authCadastroConfirmacao" type="password" autocomplete="new-password" maxlength="128" placeholder="Digite a senha novamente" required />
         </label>
-        <label class="auth-remember">
-          <input id="authCadastroLembrar" type="checkbox" checked />
-          <span>Lembrar senha neste computador</span>
-        </label>
+        <p class="auth-register-note">Depois de criar o acesso, faca login para entrar no sistema.</p>
         <button id="authCadastroButton" class="primary-action" type="submit">Criar acesso</button>
       </form>
 
       <p id="authError" class="field-message hidden"></p>
+      <p id="authSuccess" class="auth-success-message hidden"></p>
       <p class="auth-security-note">A senha nao e armazenada. O sistema usa hash seguro na pasta compartilhada e protecao do Windows para lembrar o acesso.</p>
     </section>
   </div>
@@ -214,7 +212,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.8.2</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.8.3</span>
           </div>
         </div>
       </div>

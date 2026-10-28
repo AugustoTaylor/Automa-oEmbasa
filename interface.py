@@ -226,10 +226,9 @@ class API:
             resultado = cadastrar_usuario_compartilhado(
                 payload.get("matricula"),
                 payload.get("senha"),
-                lembrar=bool(payload.get("lembrar")),
                 versao_app=str(payload.get("versao_app") or ""),
             )
-            self._usuario_autenticado = resultado.get("usuario")
+            self._usuario_autenticado = None
             return _serializar_para_front(resultado)
         except Exception as exc:
             self._usuario_autenticado = None

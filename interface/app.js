@@ -83,7 +83,8 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.8.3";
+const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
   github: "https://github.com/AugustoTaylor"
@@ -295,6 +296,13 @@ function mostrarAuthErro(mensagem = "") {
   node.classList.toggle("hidden", !mensagem);
 }
 
+function mostrarAuthSucesso(mensagem = "") {
+  const node = el("authSuccess");
+  if (!node) return;
+  node.textContent = mensagem;
+  node.classList.toggle("hidden", !mensagem);
+}
+
 function setAuthBusy(busy, texto = "") {
   state.authBusy = Boolean(busy);
   for (const id of ["authLoginButton", "authCadastroButton", "authLoginTab", "authCadastroTab"]) {
@@ -312,14 +320,15 @@ function setAuthBusy(busy, texto = "") {
   }
 }
 
-function mostrarAuthPainel(painel = "login") {
-  if (state.authBusy) return;
+function mostrarAuthPainel(painel = "login", forcar = false) {
+  if (state.authBusy && !forcar) return;
   const cadastro = painel === "cadastro";
   el("authLoginForm")?.classList.toggle("hidden", cadastro);
   el("authCadastroForm")?.classList.toggle("hidden", !cadastro);
   el("authLoginTab")?.classList.toggle("active", !cadastro);
   el("authCadastroTab")?.classList.toggle("active", cadastro);
   mostrarAuthErro("");
+  mostrarAuthSucesso("");
   window.setTimeout(() => {
     (cadastro ? el("authCadastroMatricula") : el("authLoginMatricula"))?.focus();
   }, 50);
@@ -348,6 +357,7 @@ async function concluirLogin(resultado) {
   if (el("authUserLabel")) el("authUserLabel").textContent = `Matricula ${matricula} · Sair`;
   bloquearInterfacePorLogin(false);
   mostrarAuthErro("");
+  mostrarAuthSucesso("");
   el("authLoginSenha").value = "";
   el("authCadastroSenha").value = "";
   el("authCadastroConfirmacao").value = "";
@@ -361,10 +371,11 @@ async function concluirLogin(resultado) {
 async function entrarNoSistema(event) {
   event?.preventDefault();
   if (state.authBusy || !window.pywebview?.api?.autenticar_usuario) return;
-  const matricula = String(el("authLoginMatricula")?.value || "").replace(/\D/g, "").slice(0, 12);
+  const matricula = String(el("authLoginMatricula")?.value || "").trim().slice(0, MAX_MATRICULA_CARACTERES);
   const senha = String(el("authLoginSenha")?.value || "");
   setAuthBusy(true, "Entrando...");
   mostrarAuthErro("");
+  mostrarAuthSucesso("");
   try {
     const resposta = await window.pywebview.api.autenticar_usuario({
       matricula,
@@ -384,7 +395,7 @@ async function entrarNoSistema(event) {
 async function cadastrarNoSistema(event) {
   event?.preventDefault();
   if (state.authBusy || !window.pywebview?.api?.cadastrar_usuario) return;
-  const matricula = String(el("authCadastroMatricula")?.value || "").replace(/\D/g, "").slice(0, 12);
+  const matricula = String(el("authCadastroMatricula")?.value || "").trim().slice(0, MAX_MATRICULA_CARACTERES);
   const senha = String(el("authCadastroSenha")?.value || "");
   const confirmacao = String(el("authCadastroConfirmacao")?.value || "");
   if (senha !== confirmacao) {
@@ -393,15 +404,24 @@ async function cadastrarNoSistema(event) {
   }
   setAuthBusy(true, "Criando acesso...");
   mostrarAuthErro("");
+  mostrarAuthSucesso("");
   try {
     const resposta = await window.pywebview.api.cadastrar_usuario({
       matricula,
       senha,
-      lembrar: Boolean(el("authCadastroLembrar")?.checked),
       versao_app: APP_VERSION
     });
     if (!resposta?.ok) throw new Error(resposta?.msg || "Nao foi possivel criar o acesso.");
-    await concluirLogin(resposta);
+    const matriculaCriada = String(resposta?.usuario?.matricula || matricula).slice(0, MAX_MATRICULA_CARACTERES);
+    if (el("authLoginMatricula")) el("authLoginMatricula").value = matriculaCriada;
+    if (el("authCadastroMatricula")) el("authCadastroMatricula").value = "";
+    if (el("authCadastroSenha")) el("authCadastroSenha").value = "";
+    if (el("authCadastroConfirmacao")) el("authCadastroConfirmacao").value = "";
+    mostrarAuthPainel("login", true);
+    mostrarAuthSucesso(
+      resposta?.msg || "Cadastro concluido. Entre com sua matricula e senha para acessar o sistema."
+    );
+    window.setTimeout(() => el("authLoginSenha")?.focus(), 50);
   } catch (error) {
     mostrarAuthErro(error?.message || String(error));
   } finally {
