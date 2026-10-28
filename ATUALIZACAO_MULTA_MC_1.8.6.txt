@@ -1,0 +1,27 @@
+ATUALIZACAO AUTOMATICA DE CADASTRO - MULTA CONTRATUAL (v1.8.6)
+
+Ao gerar multa com CPF/CNPJ, o programa consulta o cliente na XD03:
+1) Cliente e área de vendas já disponíveis (EMBA / MC / MC): segue VA01 ZMTC.
+2) Cliente existente sem a área MC: tenta adicionar pela XD01 (escritório 1010, equipe CAB), reconsulta na XD03 e continua apenas se a área for reconhecida.
+3) CPF/CNPJ não cadastrado: solicita dados cadastrais no formulário, cria cliente com área MC inicial e reconsulta na XD03 antes de continuar.
+
+Dados de VA01: tipo ZMTC, organização EMBA, canal MC, setor MC, escritório 1010, equipe CAB.
+As condições de pagamento, material e demais campos permanecem na configuração existente de multa.
+
+IMPORTANTE: CPF/CNPJ sozinho não fornece os dados para o cadastro completo; o usuário deve informar nome, rua, número, bairro, CEP, cidade e UF.
+O sistema interrompe uma segunda tentativa automática de criação de setor no mesmo fluxo se a XD03 continuar indicando MC ausente. Isso evita repetição sem fim e duplicidade.
+A leitura de organização/canal depende dos controles disponibilizados pelo SAP GUI da empresa. Se não estiverem expostos, o sistema mantém a verificação anterior pelo código do setor MC.
+
+ARQUIVOS DE ALTERAÇÃO:
+- backend/flows/xd03.py
+- interface/app.js
+- interface/index.html
+- backend/settings.py
+- embasa_settings.json
+- VERSAO.txt
+- CHANGELOG_TECNICO.md
+- tests/test_multa_mc_automatico.py
+- tests/test_multa_mc_ui.cjs
+
+Para aplicar, faça backup, copie os arquivos da atualização preservando pastas e execute o build_empresarial.ps1 no Windows.
+Não modifica o banco SAP nem cria multas automaticamente ao instalar. Teste primeiro com dados de homologação e confira criação, validação e não duplicação.

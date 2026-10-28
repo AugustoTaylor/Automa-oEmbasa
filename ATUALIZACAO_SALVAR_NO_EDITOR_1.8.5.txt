@@ -1,0 +1,15 @@
+EMBASA v1.8.5 - Botao Salvar no editor do modelo
+
+1. Abra Saldo de contas > Revisar contas.
+2. Adicione/edite/remova grupos e contas, configure celulas e modo individual/lote.
+3. Clique em Salvar alteracoes (topo) ou Salvar e usar (rodape).
+4. O aplicativo valida as celulas contra a planilha e grava o modelo compartilhado.
+5. Em caso de erro, o editor permanece aberto e mostra o motivo acima das contas.
+6. Depois de gravar, feche e reabra Revisar contas para conferir os dados persistidos.
+
+O editor apenas configura o mapa, nao altera a estrutura fisica da planilha.
+Os numeros das contas precisam existir nas celulas informadas e o destino nao pode conter formula.
+Se uma conta nova nao existir no Excel, configure o Excel primeiro.
+As preferencias pessoais de grupos marcados na tela principal continuam separadas.
+
+Para usar o .exe, execute build_empresarial.ps1 no Windows.

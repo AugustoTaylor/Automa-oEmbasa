@@ -1,0 +1,13 @@
+ATUALIZAÇÃO 1.8.7 - TROCA SEGURA DE ESGOTO PARA ÁGUA
+
+No fluxo combinado Água + Esgoto, a SP02 é recarregada após a confirmação do
+PDF de Esgoto. O sistema memoriza a spool de Esgoto, reencontra essa mesma
+spool na lista atual e seleciona o próximo BOLETO visual abaixo dela como Água.
+
+Antes de marcar Água, todas as checkboxes visíveis são desmarcadas diretamente.
+O processo só continua quando confirma que Água é a única linha marcada. Caso
+a confirmação falhe após duas tentativas, o modo manual seguro continua sendo
+usado para não imprimir ou salvar o boleto incorreto.
+
+Validação em SAP real: necessária no computador da empresa com SAP GUI
+Scripting e PDFCreator disponíveis.

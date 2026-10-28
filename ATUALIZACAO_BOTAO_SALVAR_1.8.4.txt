@@ -1,0 +1,40 @@
+ATUALIZACAO 1.8.4 - BOTAO SALVAR CONFIGURACAO
+===================================================
+Base: Automa-oEmbasa-main, versao 1.8.3 (28/10/2026)
+
+ALTERACAO
+- Tela Saldo de contas: novo botao "Salvar configuracao" ao lado de
+  "Limpar selecao" e "Buscar saldos no SAP".
+- O botao usa a API existente salvar_modelo_saldo_contas, com as mesmas
+  verificacoes de integridade do editor. O botao permanece desativado
+  ate a selecao de uma planilha e enquanto o sistema esta ocupado.
+- Os grupos marcados ficam memorizados POR MATRICULA E MODELO neste
+  computador (armazenamento local da interface). A configuracao das
+  contas/modelo continua na pasta compartilhada do aplicativo.
+- Ao carregar modelo existente, a ultima selecao salva dos grupos e
+  restaurada; se nao houver selecao salva, todos os grupos sao marcados.
+- Preserva mes/ano ja selecionados ao salvar.
+- Nao executa consulta SAP nem altera a planilha de origem.
+- "Salvar e usar" continua disponivel no editor "Revisar contas".
+- Mantem o bloqueio da conta 11311000, consultas em lote/individual,
+  seguranca do login e logica de preenchimento da planilha.
+
+COMO APLICAR
+1) Faca backup da versao atual do programa.
+2) Se usar o ZIP de ATUALIZACAO, extraia seu conteudo diretamente na
+   pasta raiz do projeto original, substituindo os arquivos indicados.
+3) Caso use o ZIP COMPLETO, extraia-o como um novo projeto.
+4) Para gerar um novo executavel Windows, execute dentro do projeto:
+   powershell -ExecutionPolicy Bypass -File .\build_empresarial.ps1
+5) Nao sobrescreva a pasta de dados compartilhados da empresa.
+
+TESTES REALIZADOS
+- node --check interface/app.js
+- node tests/test_saldo_salvar_ui.cjs
+- Python compileall
+- 30 testes de unidade Python executados com mocks locais para pywebview
+  e os.startfile, ausentes no Linux (nao substituem teste do Windows).
+
+OBSERVACAO
+A interface desktop real e a sessao SAP precisam ser validadas no
+Windows. Nao foi gerado arquivo .exe neste ambiente.

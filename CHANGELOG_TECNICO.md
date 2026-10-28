@@ -1,4 +1,46 @@
+## Quarta-feira, 28/10/2026 - Versão 1.8.7 (troca segura de Esgoto para Água)
+
+- No fluxo combinado Água + Esgoto, a SP02 agora é reaberta obrigatoriamente depois que o usuário conclui o PDF de Esgoto e clica em **Prosseguir para Água**.
+- A spool de Esgoto usada na primeira impressão é reencontrada pelo número, mesmo que outras spools sejam incluídas no topo da lista nesse intervalo.
+- A Água passa a ser identificada como o próximo `BOLETO (CONTAS A RECEBER)` abaixo de Esgoto, ignorando corretamente a linha intermediária de Nota de acompanhamento.
+- Todas as checkboxes visíveis são desmarcadas diretamente antes da seleção de Água; o sistema confirma que somente Água ficou marcada e repete a operação uma vez antes de acionar o modo manual seguro.
+- Adicionados testes automatizados para a sequência Boleto/Nota/Boleto/Nota, para a mudança de posição após reabrir a SP02 e para a seleção exclusiva de Água.
+
+## Quarta-feira, 28/10/2026 - Versão 1.8.6 (cadastro automático para multas)
+
+- Mantida a VA01 de Multa Contratual com os campos da tela de referência: ZMTC, EMBA, canal MC, setor MC, escritório 1010, equipe CAB.
+- A XD03 passa a comparar a área de vendas MC completa quando a tabela SAP disponibiliza organização e canal, evitando confundir MC sob outro canal com a área necessária para multa. Mantido fallback para SAP que não expõe essas colunas via GUI Scripting.
+- Quando falta a área MC, a interface utiliza o cadastro de setor na XD01, depois reconfirma na XD03 e continua o fluxo de multa. Se a nova verificação ainda indicar ausência, interrompe as tentativas automáticas para evitar loop infinito e informa o motivo.
+- Cliente sem cadastro continua usando o formulário para nome, endereço, CPF/CNPJ etc. (não há como criar cadastro completo a partir de apenas CPF/CNPJ). Após salvar o cadastro, a multa é retomada pela XD03.
+- Adicionada a opção Multa Contratual ao seletor de tipo do formulário de cadastro de clientes.
+- Corrigida a mensagem de erro de criação de setor, com status de falha visível no painel.
+- Mantidas as outras modalidades (AE/AG/EG), a consulta de saldos, a interface de modelos e o botão único “Salvar e usar”.
+- Testes locais: 35 testes Python, 3 testes Node de interface e verificações de sintaxe. Não houve execução no SAP real.
+
+## Quarta-feira, 28/10/2026 - Ajuste pontual v1.8.5 (botao unico)
+
+- Removido **Salvar alteracoes** do cabecalho da janela **Confirmar modelo de contas**, conforme solicitacao.
+- Mantido somente **Salvar e usar** no rodape fixo, com a mesma validacao e persistencia de grupos, contas, celulas, modos de consulta e ativacao.
+- Nenhuma mudanca nas consultas SAP, nas planilhas ou na autenticacao.
+
+## Quarta-feira, 28/10/2026 - Versao 1.8.5
+
+- **Salvar alteracoes** adicionado ao topo da janela **Confirmar modelo de contas**.
+- Mantido **Salvar e usar** no rodape, que agora permanece visivel; apenas a lista de grupos e contas possui rolagem.
+- Os dois botoes chamam a mesma rotina que valida e persiste todo o modelo no armazenamento compartilhado (grupos, adicoes/exclusoes, contas, celulas, modo lote/individual, ativacoes/desativacoes).
+- Controles desativados durante o salvamento para evitar gravacoes duplicadas; erros de validacao exibidos acima da lista.
+- Nenhuma alteracao feita na consulta de saldos ao SAP nem na escrita do Excel.
+
 # Registro técnico de alterações
+
+## Quarta-feira, 28/10/2026 - Versao 1.8.4
+
+- Restaurado o botao **Salvar configuracao** diretamente na tela `Saldo de contas`, ao lado de `Limpar selecao` e `Buscar saldos no SAP`.
+- O botao utiliza a validacao e o salvamento de modelos existentes no backend; nao executa consultas SAP nem sobrescreve planilhas.
+- A selecao marcada de grupos e preservada por usuario e modelo no computador via armazenamento local, e recuperada ao selecionar novamente o modelo/planilha.
+- Mantido o botao **Salvar e usar** no editor de contas e os controles de autenticacao e integridade da planilha.
+- Mantidas as consultas historicas, a separacao de contas amarelas e a exclusao SAP da conta `11311000`.
+
 
 ## Quarta-feira, 28/10/2026 - Versao 1.8.3
 

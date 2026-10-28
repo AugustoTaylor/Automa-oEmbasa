@@ -495,6 +495,70 @@ def _linha_e_nota_acompanhamento(linha):
     return "NOTA ACOMPANH" in texto
 
 
+def _ordenar_linhas_sp02_visualmente(linhas):
+    return sorted(
+        list(linhas or []),
+        key=lambda linha: int(linha.get("linha") or 0),
+    )
+
+
+def _localizar_boleto_agua_apos_esgoto(linhas, referencia_esgoto):
+    """Localiza novamente Esgoto e o BOLETO seguinte na lista atual da SP02.
+
+    A identidade da primeira spool é preservada pelo número. Isso evita assumir
+    que Esgoto continuará na primeira linha caso novas spools apareçam enquanto
+    o usuário finaliza o PDF. A Água é o próximo BOLETO visual abaixo de Esgoto;
+    as linhas intermediárias de Nota de acompanhamento são ignoradas.
+    """
+
+    boletos = _ordenar_linhas_sp02_visualmente(
+        linha for linha in linhas or [] if _linha_e_boleto(linha)
+    )
+
+    if len(boletos) < 2:
+        raise RuntimeError(
+            "A SP02 nao apresentou as duas linhas BOLETO esperadas. "
+            f"Encontrado: {len(boletos)}."
+        )
+
+    spool_referencia = _normalizar_numero_spool(
+        (referencia_esgoto or {}).get("spool")
+    )
+    linha_referencia = int((referencia_esgoto or {}).get("linha") or 0)
+    indice_esgoto = None
+
+    if spool_referencia:
+        for indice, linha in enumerate(boletos):
+            if _normalizar_numero_spool(linha.get("spool")) == spool_referencia:
+                indice_esgoto = indice
+                break
+
+    if indice_esgoto is None and linha_referencia:
+        for indice, linha in enumerate(boletos):
+            if int(linha.get("linha") or 0) == linha_referencia:
+                indice_esgoto = indice
+                break
+
+    if indice_esgoto is None:
+        raise RuntimeError(
+            "Nao foi possivel reencontrar na SP02 a spool de Esgoto "
+            f"{spool_referencia or 'sem numero'} usada na primeira impressao."
+        )
+
+    linha_esgoto = boletos[indice_esgoto]
+
+    for linha_agua in boletos[indice_esgoto + 1 :]:
+        spool_agua = _normalizar_numero_spool(linha_agua.get("spool"))
+        if spool_referencia and spool_agua == spool_referencia:
+            continue
+        return linha_esgoto, linha_agua
+
+    raise RuntimeError(
+        "A spool de Esgoto foi reencontrada, mas nao existe outro BOLETO "
+        "abaixo dela para o projeto de Agua."
+    )
+
+
 def _localizar_par_spool_sp02(session):
     linhas = _coletar_linhas_sp02(session)
     notas = _ordenar_linhas_sp02_decrescente(
@@ -1051,6 +1115,98 @@ def _marcar_boleto_sp02_sem_validar(
         "status": linha_boleto.get("status"),
         "paginas": linha_boleto.get("paginas"),
     }
+
+
+def _id_checkbox_linha_sp02(linha):
+    checkbox_id = str((linha or {}).get("checkbox_id") or "").strip()
+    if checkbox_id:
+        return checkbox_id
+    return f"wnd[0]/usr/chk[1,{int((linha or {}).get('linha') or 0)}]"
+
+
+def _estado_checkbox_linha_sp02(session, linha):
+    try:
+        checkbox = session.findById(_id_checkbox_linha_sp02(linha))
+    except Exception:
+        return None
+
+    return bool(
+        _safe_getattr(
+            checkbox,
+            "selected",
+            "Selected",
+            default=False,
+        )
+    )
+
+
+def _selecionar_unico_boleto_sp02(
+    session,
+    linha_alvo,
+    linhas_visiveis=None,
+    logger=None,
+):
+    """Limpa a lista linha a linha, marca somente o BOLETO alvo e verifica.
+
+    O SHIFT+F6 continua sendo enviado como atalho auxiliar, mas a correção não
+    depende dele: cada checkbox visível é desmarcada explicitamente antes da
+    seleção do alvo. Ao final, a função só retorna se nenhuma outra linha tiver
+    permanecido marcada.
+    """
+
+    alvo_y = int((linha_alvo or {}).get("linha") or 0)
+    if alvo_y <= 0:
+        raise RuntimeError("A linha alvo da SP02 nao possui coordenada valida.")
+
+    linhas = list(linhas_visiveis or _coletar_linhas_sp02(session))
+    if not linhas:
+        raise RuntimeError("Nenhuma linha visivel foi localizada na SP02.")
+
+    ultimo_detalhe = ""
+
+    for tentativa in range(1, 3):
+        _limpar_selecao_sp02_com_shift_f6(session, logger=logger)
+
+        for linha in linhas:
+            try:
+                session.findById(_id_checkbox_linha_sp02(linha)).selected = False
+            except Exception:
+                continue
+
+        wait_until_ready(session, timeout=5)
+        time.sleep(0.2)
+
+        dados_alvo = _marcar_boleto_sp02_sem_validar(
+            session,
+            linha_alvo,
+            selecionado=True,
+            logger=logger,
+        )
+
+        linhas_marcadas = []
+        for linha in linhas:
+            if _estado_checkbox_linha_sp02(session, linha) is True:
+                linhas_marcadas.append(int(linha.get("linha") or 0))
+
+        if linhas_marcadas == [alvo_y]:
+            if logger:
+                logger.add(
+                    6,
+                    "Selecao exclusiva da SP02 confirmada: somente o boleto "
+                    f"da linha Y={alvo_y} permaneceu marcado.",
+                    publico=True,
+                )
+            return dados_alvo
+
+        ultimo_detalhe = (
+            f"tentativa {tentativa}: linhas marcadas="
+            f"{linhas_marcadas or 'nenhuma'}; alvo=Y{alvo_y}"
+        )
+
+    raise RuntimeError(
+        "Nao foi possivel deixar somente o boleto de Agua marcado na SP02 "
+        f"({ultimo_detalhe})."
+    )
 
 
 def _imprimir_spool_selecionada(session):
@@ -1733,39 +1889,24 @@ def selecionar_boletos_sp02(
             wait_for_element(session_automatica, "wnd[0]", timeout=10)
             wait_until_ready(session_automatica, timeout=10)
 
-            if not _esta_na_sp02(session_automatica):
-                abrir_ordens_spool_boleto(
-                    session_automatica,
-                    logger=logger,
-                    progress_callback=progress_callback,
-                )
+            # Reabre a SP02 mesmo que o SAP ainda informe que está nela. Isso
+            # recarrega a lista sem herdar a marcação usada na impressão de
+            # Esgoto e permite reencontrar a segunda dupla BOLETO/Nota.
+            fechar_popups_se_existirem(session_automatica)
+            abrir_ordens_spool_boleto(
+                session_automatica,
+                logger=logger,
+                progress_callback=progress_callback,
+            )
 
             if not _esta_na_sp02(session_automatica):
                 raise RuntimeError("A transacao SP02 nao ficou ativa apos a reabertura.")
 
-            if not _limpar_selecao_sp02_com_shift_f6(
-                session_automatica,
-                logger=logger,
-            ):
-                raise RuntimeError("A selecao anterior da SP02 nao foi limpa.")
-
-            linhas_automaticas = sorted(
-                [
-                    linha
-                    for linha in _coletar_linhas_sp02(session_automatica)
-                    if _linha_e_boleto(linha)
-                ],
-                key=lambda linha: int(linha.get("linha") or 0),
+            linhas_automaticas = _coletar_linhas_sp02(session_automatica)
+            linha_esgoto_atual, linha_agua_atual = _localizar_boleto_agua_apos_esgoto(
+                linhas_automaticas,
+                linha_esgoto,
             )
-
-            if len(linhas_automaticas) < 2:
-                raise RuntimeError(
-                    "A SP02 nao apresentou as duas linhas BOLETO esperadas "
-                    f"apos a confirmacao. Encontrado: {len(linhas_automaticas)}."
-                )
-
-            linha_esgoto_atual = linhas_automaticas[0]
-            linha_agua_atual = linhas_automaticas[1]
 
             if (
                 linha_esgoto_atual.get("spool")
@@ -1776,32 +1917,12 @@ def selecionar_boletos_sp02(
                     "As linhas de Esgoto e Agua apontaram para o mesmo numero de spool."
                 )
 
-            dados_agua = _marcar_boleto_sp02_sem_validar(
+            dados_agua = _selecionar_unico_boleto_sp02(
                 session_automatica,
                 linha_agua_atual,
-                selecionado=True,
+                linhas_visiveis=linhas_automaticas,
                 logger=logger,
             )
-            y_agua = int(linha_agua_atual.get("linha") or 0)
-            checkbox_agua = wait_for_element(
-                session_automatica,
-                f"wnd[0]/usr/chk[1,{y_agua}]",
-                timeout=8,
-            )
-            agua_selecionada = bool(
-                _safe_getattr(
-                    checkbox_agua,
-                    "selected",
-                    "Selected",
-                    default=False,
-                )
-            )
-
-            if not agua_selecionada:
-                raise RuntimeError(
-                    "O comando foi enviado, mas a linha do boleto de Agua "
-                    "nao permaneceu marcada na SP02."
-                )
 
             spools_automaticos = [
                 {
@@ -1887,24 +2008,17 @@ def selecionar_boletos_sp02(
                         progress_callback=progress_callback,
                     )
 
-                linhas_recuperacao = sorted(
-                    [
-                        linha
-                        for linha in _coletar_linhas_sp02(session_recuperacao)
-                        if _linha_e_boleto(linha)
-                    ],
-                    key=lambda linha: int(linha.get("linha") or 0),
-                )
+                linhas_recuperacao = _coletar_linhas_sp02(session_recuperacao)
 
                 if linhas_recuperacao:
-                    _limpar_selecao_sp02_com_shift_f6(
-                        session_recuperacao,
-                        logger=logger,
+                    linha_esgoto_recuperacao, _ = _localizar_boleto_agua_apos_esgoto(
+                        linhas_recuperacao,
+                        linha_esgoto,
                     )
-                    _marcar_boleto_sp02_sem_validar(
+                    _selecionar_unico_boleto_sp02(
                         session_recuperacao,
-                        linhas_recuperacao[0],
-                        selecionado=True,
+                        linha_esgoto_recuperacao,
+                        linhas_visiveis=linhas_recuperacao,
                         logger=logger,
                     )
                     selecao_esgoto_confirmada = True

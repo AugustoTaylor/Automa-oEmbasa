@@ -331,6 +331,26 @@ def _retornar_tela_inicial_xd03(session, progress_callback=None, notify=True):
     )
 
 
+def _ler_campo_area_vendas(session, tabela_id, campo, linha, colunas):
+    """Lê campos da mesma linha do popup de áreas, se disponíveis no SAP GUI.
+
+    Algumas versões do SAP mudam os índices das colunas. A leitura é opcional:
+    campos indisponíveis não interrompem a consulta pré-existente da XD03.
+    """
+    for coluna in colunas:
+        for prefixo in ("ctxt", "txt"):
+            try:
+                elemento = session.findById(
+                    f"{tabela_id}/{prefixo}RF02D-{campo}[{coluna},{linha}]"
+                )
+                valor = _ler_texto(elemento).strip().upper()
+                if valor:
+                    return valor
+            except Exception:
+                continue
+    return ""
+
+
 def _ler_setores_atividade_cliente(session, logger, progress_callback=None):
     notificar_progresso(
         progress_callback,
@@ -381,6 +401,14 @@ def _ler_setores_atividade_cliente(session, logger, progress_callback=None):
                 "codigo": codigo,
                 "descricao": descricao,
                 "tipo": _SETOR_PARA_TIPO.get(codigo),
+                # Área de vendas completa importa para multas: EMBA / MC / MC.
+                # A mesma divisão MC sob outro canal não habilita a VA01 ZMTC.
+                "organizacao_vendas": _ler_campo_area_vendas(
+                    session, _TABELA_AREAS_CLIENTE, "VKORG", linha, (0, 1, 2, 3)
+                ),
+                "canal_distribuicao": _ler_campo_area_vendas(
+                    session, _TABELA_AREAS_CLIENTE, "VTWEG", linha, (2, 1, 3, 0)
+                ),
             }
         )
 
@@ -390,13 +418,28 @@ def _ler_setores_atividade_cliente(session, logger, progress_callback=None):
 
 def _validar_suporte_tipo(setores, tipo_solicitacao):
     setores_necessarios = _setores_necessarios(tipo_solicitacao)
-
     codigos_disponiveis = {
         str(setor.get("codigo") or "").strip().upper()
         for setor in setores
     }
+    if not all(setor in codigos_disponiveis for setor in setores_necessarios):
+        return False
 
-    return all(setor in codigos_disponiveis for setor in setores_necessarios)
+    if tipo_solicitacao != "multa_contratual":
+        return True
+
+    # A VA01 da multa usa a área EMBA / MC / MC, não apenas o setor MC.
+    # Se o popup SAP expõe organização/canal, não aceite MC de outra área.
+    # Se os campos opcionais não são expostos na versão do SAP, preserve
+    # a compatibilidade com a leitura original baseada no setor.
+    for setor in setores:
+        if str(setor.get("codigo") or "").strip().upper() != "MC":
+            continue
+        organizacao = str(setor.get("organizacao_vendas") or "").strip().upper()
+        canal = str(setor.get("canal_distribuicao") or "").strip().upper()
+        if (not organizacao or organizacao == "EMBA") and (not canal or canal == "MC"):
+            return True
+    return False
 
 
 def _setores_necessarios(tipo_solicitacao):
@@ -635,7 +678,7 @@ def buscar_cliente(session, dados, logger, progress_callback=None):
                 mensagem = (
                     f"O tipo selecionado ({tipo_label}) não existe para o cliente informado "
                     f"(setor {setor_necessario}). Tipos disponíveis: {disponiveis}. "
-                    "Solicite a criação da área de vendas para este cliente e retorne ao processo."
+                    "O sistema pode cadastrar a área de vendas necessária e retomar o processo."
                 )
 
                 logger.add(0, mensagem, nivel="ERRO", publico=True)
@@ -662,6 +705,11 @@ def buscar_cliente(session, dados, logger, progress_callback=None):
                     "tipo_solicitacao": tipo_solicitacao,
                     "tipo_label": tipo_label,
                     "setores_necessarios": list(_setores_necessarios(tipo_solicitacao)),
+                    "area_vendas_necessaria": (
+                        {"organizacao": "EMBA", "canal": "MC", "setor": "MC",
+                         "escritorio": "1010", "equipe": "CAB"}
+                        if tipo_solicitacao == "multa_contratual" else None
+                    ),
                     "setores_encontrados": setores,
                     "tipos_suportados": tipos_suportados,
                     "mensagem": mensagem,

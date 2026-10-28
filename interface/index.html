@@ -212,7 +212,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.8.3</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.8.7</span>
           </div>
         </div>
       </div>
@@ -946,6 +946,16 @@
             Limpar sele&ccedil;&atilde;o
           </button>
           <button
+            id="saldoPlanilhaSalvarButton"
+            class="ghost-action saldo-save-button"
+            type="button"
+            onclick="salvarConfiguracaoSaldoContas()"
+            disabled
+            title="Salva o modelo de contas e os grupos marcados, sem consultar o SAP."
+          >
+            Salvar configura&ccedil;&atilde;o
+          </button>
+          <button
             id="saldoSapButton"
             class="primary-action"
             type="button"
@@ -1024,6 +1034,9 @@
                 </button>
                 <button type="button" onclick="selecionarCadastroTipo('agua_esgoto', '\u00c1gua + Esgoto')">
                   &Aacute;gua + Esgoto
+                </button>
+                <button type="button" onclick="selecionarCadastroTipo('multa_contratual', 'Multa Contratual')">
+                  Multa Contratual
                 </button>
               </div>
             </div>
@@ -1513,7 +1526,9 @@
           <p>Revise o que foi detectado. As alteracoes ficam salvas para os proximos relatorios.</p>
           <p>As contas precisam existir nas celulas indicadas da planilha; este editor apenas mapeia onde ler e preencher.</p>
         </div>
-        <button type="button" class="log-close" onclick="fecharEditorModeloSaldoContas()">Fechar</button>
+        <div class="saldo-model-head-actions">
+          <button type="button" class="log-close" onclick="fecharEditorModeloSaldoContas()">Fechar</button>
+        </div>
       </div>
 
       <div class="saldo-model-fields">
@@ -1537,8 +1552,8 @@
         </div>
         <button type="button" class="ghost-action" onclick="adicionarGrupoModeloSaldoContas()">Adicionar grupo</button>
       </div>
+      <p id="saldoModeloErro" class="field-message saldo-model-error hidden" role="alert"></p>
       <div id="saldoModeloGrupos" class="saldo-model-groups"></div>
-      <p id="saldoModeloErro" class="field-message hidden"></p>
 
       <div class="saldo-model-footer">
         <button id="saldoModeloExcluirButton" type="button" class="ghost-action danger-action hidden" onclick="excluirModeloSaldoContasAtual()">
@@ -1546,7 +1561,7 @@
         </button>
         <span></span>
         <button type="button" class="ghost-action" onclick="fecharEditorModeloSaldoContas()">Cancelar</button>
-        <button id="saldoModeloSalvarButton" type="button" class="primary-action" onclick="salvarModeloSaldoContasAtual()">
+        <button id="saldoModeloSalvarButton" type="button" class="primary-action" onclick="salvarModeloSaldoContasAtual()" title="Valida e salva todas as alteracoes do modelo de contas.">
           Salvar e usar
         </button>
       </div>

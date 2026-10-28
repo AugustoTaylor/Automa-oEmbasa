@@ -1,0 +1,10 @@
+EMBASA v1.8.5 - AJUSTE DO BOTAO DE SALVAR
+
+Na janela Saldo de contas > Revisar contas > Confirmar modelo de contas:
+- Removido o botao adicional "Salvar alteracoes" do topo.
+- Mantido apenas "Salvar e usar" no rodape fixo.
+- Continua salvando todas as edicoes feitas no modelo: grupos, contas, celulas, modos individual/lote e ativacao/desativacao.
+- O modelo continua sendo validado antes de ser gravado.
+- Consulta SAP e preenchimento do Excel nao foram alterados.
+
+Para usar no executavel, substitua os arquivos e recompile com build_empresarial.ps1 no Windows.

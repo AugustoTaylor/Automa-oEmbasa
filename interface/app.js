@@ -64,7 +64,7 @@ const SETOR_MODELOS = {
   AE: { titulo: "Viabilidade", vendas: "1055", grupo: "DM" },
   AG: { titulo: "Água", vendas: "1055", grupo: "DM" },
   EG: { titulo: "Esgoto", vendas: "1070", grupo: "ME" },
-  MC: { titulo: "Multa Contratual", vendas: "1010", grupo: "CAB" }
+  MC: { titulo: "Multa Contratual", vendas: "1010", grupo: "CAB", organizacao: "EMBA", canal: "MC", setor: "MC", tipoOrdem: "ZMTC" }
 };
 
 // Status operacional exibido no card de status da base.
@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.3";
+const APP_VERSION = "1.8.7";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
@@ -96,6 +96,7 @@ const SUPPORTED_CONTACT_EXTENSIONS = new Set([".jpg", ".jpeg", ".png"]);
 const SUPPORTED_CONTACT_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
 const THEME_STORAGE_KEY = "embasa-theme";
 const CLIENT_DRAFT_STORAGE_KEY = "embasa-client-drafts";
+const SALDO_GRUPOS_STORAGE_PREFIX = "embasa-saldo-grupos-v1";
 const STATUS_ATIVOS = new Set([
   "processando", "processing", "running", "ativo", "active", "iniciando", "iniciado"
 ]);
@@ -2843,6 +2844,49 @@ function clonarModeloSaldoContas(modelo) {
   return modelo ? JSON.parse(JSON.stringify(modelo)) : null;
 }
 
+// Preferencias de grupos: locais a cada usuario/modelo; o modelo em si permanece
+// salvo no backend compartilhado. Nao misturar selecoes entre matriculas.
+function chaveSelecaoGruposSaldoContas(modeloId) {
+  const id = String(modeloId || "").trim();
+  if (!id) return "";
+  const usuario = String(state.usuarioAutenticado?.matricula || "local").trim().toLowerCase();
+  return `${SALDO_GRUPOS_STORAGE_PREFIX}:${usuario}:${id}`;
+}
+
+function recuperarSelecaoGruposSaldoContas(modeloId, grupos) {
+  const chave = chaveSelecaoGruposSaldoContas(modeloId);
+  if (!chave) return null;
+  try {
+    const texto = localStorage.getItem(chave);
+    if (texto === null) return null;
+    const salvos = JSON.parse(texto);
+    if (!Array.isArray(salvos) || salvos.some((id) => typeof id !== "string")) return null;
+    const disponiveis = new Set((grupos || []).map((grupo) => grupo.id));
+    return [...new Set(salvos)].filter((id) => disponiveis.has(id));
+  } catch (error) {
+    log(`Nao foi possivel recuperar a selecao de grupos: ${error?.message || error}`, "error");
+    return null;
+  }
+}
+
+function persistirSelecaoGruposSaldoContas(modeloId, ids) {
+  const chave = chaveSelecaoGruposSaldoContas(modeloId);
+  if (!chave) return false;
+  try {
+    localStorage.setItem(chave, JSON.stringify(ids || []));
+    return true;
+  } catch (error) {
+    log(`Nao foi possivel salvar a selecao local de grupos: ${error?.message || error}`, "error");
+    return false;
+  }
+}
+
+function selecionarGruposSalvosOuTodosSaldoContas(analise) {
+  const grupos = analise?.grupos || [];
+  const salvos = recuperarSelecaoGruposSaldoContas(analise?.modelo_id, grupos);
+  return salvos === null ? grupos.map((grupo) => grupo.id) : salvos;
+}
+
 function atualizarSeletorModelosSaldoContas() {
   const select = el("saldoModeloSelect");
   if (!select) return;
@@ -3165,8 +3209,7 @@ async function detectarAbaEditorSaldoContas() {
   const caminho = state.saldoPlanilhaAnalise?.caminho;
   const aba = el("saldoModeloAba")?.value || "";
   if (!caminho || !window.pywebview?.api?.detectar_modelo_saldo_contas) return;
-  const salvar = el("saldoModeloSalvarButton");
-  if (salvar) salvar.disabled = true;
+  habilitarBotaoSalvarModeloSaldoContas(true);
   try {
     const resposta = await window.pywebview.api.detectar_modelo_saldo_contas(caminho, aba);
     if (!resposta?.ok || !resposta?.modelo) {
@@ -3184,31 +3227,113 @@ async function detectarAbaEditorSaldoContas() {
       erro.classList.remove("hidden");
     }
   } finally {
-    if (salvar) salvar.disabled = false;
+    habilitarBotaoSalvarModeloSaldoContas(false);
+  }
+}
+
+// Botao Salvar presente na tela principal de Saldo de contas.
+// Salva/valida o modelo sem executar o SAP ou sobrescrever a planilha.
+async function salvarConfiguracaoSaldoContas() {
+  if (state.saldoPlanilhaBusy) return;
+  limparErroSaldoContas();
+  const analise = state.saldoPlanilhaAnalise;
+  if (!analise?.modelo || !analise?.caminho) {
+    mostrarErroSaldoContas("Selecione uma planilha antes de salvar a configuracao.");
+    return;
+  }
+  if (!window.pywebview?.api?.salvar_modelo_saldo_contas) {
+    mostrarErroSaldoContas("O salvamento esta disponivel no aplicativo desktop.");
+    return;
+  }
+
+  const selecionados = gruposSaldoContasSelecionados();
+  const mesAtual = el("saldoMes")?.value || "";
+  const anoAtual = el("saldoAno")?.value || "";
+  setSaldoPlanilhaBusy(true, "salvar");
+  setStatus("Salvando configuracao", "running");
+  try {
+    const resposta = await window.pywebview.api.salvar_modelo_saldo_contas({
+      caminho: analise.caminho,
+      modelo: analise.modelo
+    });
+    if (!resposta?.ok || !resposta?.analise || !resposta?.modelo?.id) {
+      throw new Error(resposta?.msg || "O modelo nao foi salvo. Revise os dados das contas.");
+    }
+    const disponiveis = (resposta.analise.grupos || []).map((grupo) => grupo.id);
+    const validos = selecionados.filter((id) => disponiveis.includes(id));
+    const gruposVisiveis = !el("saldoGruposPainel")?.classList.contains("hidden");
+    state.saldoPlanilhaGruposSelecionados = !gruposVisiveis || (selecionados.length && !validos.length)
+      ? disponiveis : validos;
+    state.saldoModelos = Array.isArray(resposta.modelos) ? resposta.modelos : state.saldoModelos;
+    state.saldoModelosCarregados = true;
+    state.saldoModeloId = resposta.modelo.id;
+    state.saldoPlanilhaAnalise = resposta.analise;
+    const preferenciasSalvas = persistirSelecaoGruposSaldoContas(
+      state.saldoModeloId, state.saldoPlanilhaGruposSelecionados
+    );
+    atualizarSeletorModelosSaldoContas();
+    renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
+    // Salvar o mapeamento nao deve alterar o periodo escolhido para a consulta.
+    if (el("saldoMes")) el("saldoMes").value = mesAtual;
+    if (el("saldoAno")) el("saldoAno").value = anoAtual;
+    atualizarPeriodoSaldoContas();
+    setStatus("Configuracao salva", "success");
+    showSimpleOperationalToast(preferenciasSalvas
+      ? "Modelo e grupos selecionados salvos com sucesso."
+      : "Modelo salvo. A selecao local dos grupos nao pode ser armazenada neste computador.");
+  } catch (error) {
+    const mensagem = error?.message || String(error);
+    mostrarErroSaldoContas(mensagem);
+    setStatus("Falha ao salvar configuracao", "error");
+  } finally {
+    setSaldoPlanilhaBusy(false);
+  }
+}
+
+let salvamentoEditorSaldoContasEmAndamento = false;
+function habilitarBotaoSalvarModeloSaldoContas(salvando) {
+  const botao = el("saldoModeloSalvarButton");
+  if (botao) {
+    botao.disabled = salvando;
+    botao.textContent = salvando ? "Salvando..." : "Salvar e usar";
   }
 }
 
 async function salvarModeloSaldoContasAtual() {
+  // O botao Salvar e usar grava todo o rascunho editado.
+  if (salvamentoEditorSaldoContasEmAndamento) return;
   const modelo = sincronizarCamposModeloSaldoContas();
   const caminho = state.saldoPlanilhaAnalise?.caminho;
   const erro = el("saldoModeloErro");
-  const salvar = el("saldoModeloSalvarButton");
-  if (!modelo || !caminho || !window.pywebview?.api?.salvar_modelo_saldo_contas) return;
-  erro?.classList.add("hidden");
-  if (salvar) {
-    salvar.disabled = true;
-    salvar.textContent = "Validando...";
+  if (!modelo || !caminho || !window.pywebview?.api?.salvar_modelo_saldo_contas) {
+    if (erro) {
+      erro.textContent = "Selecione uma planilha para salvar o modelo no aplicativo desktop.";
+      erro.classList.remove("hidden");
+    }
+    return;
   }
+  salvamentoEditorSaldoContasEmAndamento = true;
+  erro?.classList.add("hidden");
+  habilitarBotaoSalvarModeloSaldoContas(true);
   try {
+    // Envia todas as edicoes: grupos adicionados/removidos, contas, celulas,
+    // modo individual/lote e estados ativos. O backend valida antes de gravar.
     const resposta = await window.pywebview.api.salvar_modelo_saldo_contas({ caminho, modelo });
-    if (!resposta?.ok) {
+    if (!resposta?.ok || !resposta?.analise || !resposta?.modelo?.id) {
       throw new Error(resposta?.msg || "Revise o modelo antes de salvar.");
     }
     state.saldoModelos = Array.isArray(resposta.modelos) ? resposta.modelos : state.saldoModelos;
     state.saldoModelosCarregados = true;
+    const gruposAntes = gruposSaldoContasSelecionados();
     state.saldoPlanilhaAnalise = resposta.analise;
     state.saldoModeloId = resposta.modelo?.id || "";
-    state.saldoPlanilhaGruposSelecionados = (resposta.analise?.grupos || []).map((grupo) => grupo.id);
+    const disponiveis = (resposta.analise?.grupos || []).map((grupo) => grupo.id);
+    const validos = gruposAntes.filter((id) => disponiveis.includes(id));
+    // Se o mapeamento anterior ainda nao podia mostrar os grupos, selecionar todos.
+    const gruposVisiveis = !el("saldoGruposPainel")?.classList.contains("hidden");
+    state.saldoPlanilhaGruposSelecionados = !gruposVisiveis || (gruposAntes.length && !validos.length)
+      ? disponiveis : validos;
+    persistirSelecaoGruposSaldoContas(state.saldoModeloId, state.saldoPlanilhaGruposSelecionados);
     atualizarSeletorModelosSaldoContas();
     renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
     closeModal("saldoModeloModal");
@@ -3221,10 +3346,8 @@ async function salvarModeloSaldoContasAtual() {
       erro.classList.remove("hidden");
     }
   } finally {
-    if (salvar) {
-      salvar.disabled = false;
-      salvar.textContent = "Salvar e usar";
-    }
+    salvamentoEditorSaldoContasEmAndamento = false;
+    habilitarBotaoSalvarModeloSaldoContas(false);
   }
 }
 
@@ -3261,7 +3384,7 @@ async function selecionarModeloSaldoContas(modeloId) {
     }
     state.saldoPlanilhaAnalise = resposta;
     state.saldoModeloId = modeloId;
-    state.saldoPlanilhaGruposSelecionados = (resposta.grupos || []).map((grupo) => grupo.id);
+    state.saldoPlanilhaGruposSelecionados = selecionarGruposSalvosOuTodosSaldoContas(resposta);
     renderizarAnaliseSaldoContas(resposta);
     setStatus("Modelo confirmado", "success");
   } catch (error) {
@@ -3422,6 +3545,7 @@ function setSaldoPlanilhaBusy(busy, acao = "planilha") {
   state.saldoPlanilhaBusy = Boolean(busy);
   const selecionar = el("saldoPlanilhaSelecionarButton");
   const limpar = el("saldoPlanilhaLimparButton");
+  const salvar = el("saldoPlanilhaSalvarButton");
   const consultar = el("saldoSapButton");
   const modeloConfirmado = Boolean(
     state.saldoPlanilhaAnalise?.modelo_valido &&
@@ -3439,6 +3563,11 @@ function setSaldoPlanilhaBusy(busy, acao = "planilha") {
 
   if (limpar) {
     limpar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise;
+  }
+
+  if (salvar) {
+    salvar.disabled = state.saldoPlanilhaBusy || !state.saldoPlanilhaAnalise?.modelo;
+    salvar.textContent = state.saldoPlanilhaBusy && acao === "salvar" ? "Salvando..." : "Salvar configuracao";
   }
 
   if (consultar) {
@@ -3498,6 +3627,7 @@ function renderizarAnaliseSaldoContas(analise) {
   const resumoNode = el("saldoPlanilhaResumo");
   const detalhesNode = el("saldoPlanilhaDetalhes");
   const limpar = el("saldoPlanilhaLimparButton");
+  const salvar = el("saldoPlanilhaSalvarButton");
   const consultar = el("saldoSapButton");
   const modeloPainel = el("saldoModeloPainel");
 
@@ -3514,6 +3644,7 @@ function renderizarAnaliseSaldoContas(analise) {
     resumoNode?.classList.add("hidden");
     detalhesNode?.classList.add("hidden");
     if (limpar) limpar.disabled = true;
+    if (salvar) salvar.disabled = true;
     if (consultar) consultar.disabled = true;
     return;
   }
@@ -3588,11 +3719,12 @@ function renderizarAnaliseSaldoContas(analise) {
 
   const idsDisponiveis = (analise.grupos || []).map((grupo) => grupo.id);
   const selecaoValida = state.saldoPlanilhaGruposSelecionados.filter((id) => idsDisponiveis.includes(id));
-  state.saldoPlanilhaGruposSelecionados = selecaoValida.length ? selecaoValida : idsDisponiveis;
+  state.saldoPlanilhaGruposSelecionados = selecaoValida;
   renderizarGruposSaldoContas(analise);
   resumoNode?.classList.remove("hidden");
   detalhesNode?.classList.toggle("hidden", alertas.length === 0);
-  if (limpar) limpar.disabled = false;
+  if (limpar) limpar.disabled = state.saldoPlanilhaBusy;
+  if (salvar) salvar.disabled = state.saldoPlanilhaBusy || !analise.modelo;
   if (consultar) {
     consultar.disabled = state.saldoPlanilhaBusy || !analise.modelo_valido || !analise.modelo_id || analise.requer_confirmacao || gruposSaldoContasSelecionados().length === 0;
   }
@@ -3628,7 +3760,7 @@ async function selecionarPlanilhaSaldoContas() {
 
     state.saldoPlanilhaAnalise = resposta || null;
     state.saldoModeloId = resposta?.modelo_id || "";
-    state.saldoPlanilhaGruposSelecionados = (resposta?.grupos || []).map((grupo) => grupo.id);
+    state.saldoPlanilhaGruposSelecionados = selecionarGruposSalvosOuTodosSaldoContas(resposta);
     renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
 
     if (!resposta?.ok) {
@@ -5772,6 +5904,10 @@ function clonePlain(value) {
   }
 }
 
+function isMultaContratual(payload = {}) {
+  return payload?.modalidade === "multa_contratual" || payload?.tipo === "multa_contratual";
+}
+
 function formatarDocumentoResumo(documento) {
   const info = analisarDocumento(documento || "");
   return info.formatado || String(documento || "").trim() || "--";
@@ -5826,7 +5962,9 @@ function openSapActionModal(acao, payload) {
   } else if (tipoAcao === "setor_ausente") {
     kicker.textContent = "Setor ausente";
     title.textContent = "Criar setor do cliente?";
-    message.textContent = "O cliente existe, mas não possui o setor exigido para o tipo selecionado. Os dados de setor são padrão, então o sistema pode criar e seguir o fluxo.";
+    message.textContent = isMultaContratual(payload)
+      ? "O cliente não possui a área de vendas da Multa Contratual (EMBA / MC / MC). O sistema vai cadastrá-la usando escritório 1010 e equipe CAB e, após confirmar no SAP, retomará a multa."
+      : "O cliente existe, mas não possui o setor exigido para o tipo selecionado. Os dados de setor são padrão, então o sistema pode criar e seguir o fluxo.";
     confirmButton.textContent = "Criar setores e continuar";
     details.innerHTML = `
       <div>
@@ -6279,12 +6417,13 @@ async function executarCriacaoSetoresPendentes() {
 
     setStatus("Cadastrando setores", "running");
 
+    const multa = isMultaContratual(payload);
     const resposta = await window.pywebview.api.adicionar_setores_cliente_sap({
       doc: acao.documento || payload.doc,
       tipo: payload.tipo,
       tipo_documento: acao.tipo_documento,
       cliente: acao.cliente,
-      setores: acao.setores_necessarios || []
+      setores: multa ? ["MC"] : (acao.setores_necessarios || [])
     });
 
     if (!resposta?.ok) {
@@ -6295,6 +6434,7 @@ async function executarCriacaoSetoresPendentes() {
       }
 
       log(resposta?.msg || "Falha ao criar setores.", "error");
+      setStatus("Falha no cadastro do setor", "error");
       openLogsPopover();
       return;
     }
@@ -6303,8 +6443,10 @@ async function executarCriacaoSetoresPendentes() {
     showSimpleOperationalToast("Setores criados. Retomando fluxo padrão.");
     log(`Setores criados para o cliente ${acao.cliente || "--"}. Retomando fluxo padrão.`);
     state.pendingSapAction = null;
-    if (payload.modalidade === "multa_contratual" || payload.tipo === "multa_contratual") {
-      await executarFluxoMultaContratual(payload, { resume: false });
+    if (multa) {
+      // Uma única nova consulta XD03 após o XD01. Se ainda estiver ausente,
+      // mostra diagnóstico e não tenta cadastrar indefinidamente.
+      await executarFluxoMultaContratual(payload, { resume: false, autoRetrySetor: true });
     } else {
       await executarFluxo(payload, { resume: false });
     }
@@ -6314,6 +6456,7 @@ async function executarCriacaoSetoresPendentes() {
     }
 
     log(`Falha ao criar setores: ${error}`, "error");
+    setStatus("Falha no cadastro do setor", "error");
     openLogsPopover();
   } finally {
     if (button) {
@@ -7457,7 +7600,8 @@ async function executarFluxoMultaContratual(payload, options = {}) {
     checkpoint = null,
     manageButtons = true,
     resetProgress = true,
-    clearFormOnSuccess = true
+    clearFormOnSuccess = true,
+    autoRetrySetor = false
   } = options;
   const resumeCheckpoint = resume
     ? cloneCheckpoint(checkpoint || state.resumeCheckpoint)
@@ -7525,9 +7669,20 @@ async function executarFluxoMultaContratual(payload, options = {}) {
       }
 
       if (res.acao_pendente?.tipo === "setor_ausente") {
+        if (autoRetrySetor) {
+          // Protege contra loop infinito se a criação foi aceita, mas a XD03
+          // ainda não enxerga EMBA / MC / MC (ou se o SAP recusou o cadastro).
+          state.pendingSapAction = null;
+          state.pendingSapPayload = null;
+          log("O setor MC continua ausente após a tentativa de cadastro. Verifique EMBA / MC / MC no XD03 antes de tentar novamente.", "error");
+          setStatus("Área MC não confirmada no SAP", "error");
+          showResumeBox(res.checkpoint, "A área EMBA / MC / MC não foi confirmada no SAP. Verifique o cadastro antes de reiniciar a multa.");
+          openLogsPopover();
+          return res;
+        }
         setPendingSapAction(res.acao_pendente, dados);
         hideResumeBox();
-        log("Setor MC ausente identificado. Criando setor automaticamente para Multa Contratual.");
+        log("Área MC (EMBA / MC / MC) ausente. Cadastrando e verificando no SAP antes de retomar a multa.");
         await executarCriacaoSetoresPendentes();
         return res;
       }

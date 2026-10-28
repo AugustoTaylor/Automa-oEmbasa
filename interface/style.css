@@ -1235,7 +1235,12 @@ video {
 }
 
 .account-balance-actions {
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.25fr);
+}
+
+.account-balance-actions .saldo-save-button {
+  min-height: 44px;
+  font-weight: 700;
 }
 
 .account-balance-actions .primary-action:disabled {
@@ -3897,15 +3902,35 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
 .saldo-model-select-field { flex: 1; margin: 0; }
 .saldo-model-select-field select { min-height: 42px; }
 .saldo-model-toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Editor: cabecalho e rodape de salvamento visiveis; apenas os grupos rolam. */
 .saldo-model-card {
+  display: flex;
+  flex-direction: column;
   width: min(1180px, calc(100vw - 28px));
-  max-height: 94vh;
-  margin-top: 3vh;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  margin: 12px auto;
   overflow: hidden;
   text-align: left;
 }
-.saldo-model-head { margin-bottom: 14px; }
+.saldo-model-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex: 0 0 auto;
+  margin-bottom: 14px;
+}
+.saldo-model-head > div:first-child { min-width: 0; }
 .saldo-model-head p { margin: 4px 0 0; text-align: left; }
+.saldo-model-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+.saldo-model-error { flex: 0 0 auto; margin: 0 0 10px !important; }
+.saldo-model-head-actions .log-close { flex-shrink: 0; }
 .saldo-model-fields {
   display: grid;
   grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .8fr) auto;
@@ -3926,10 +3951,13 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
 .saldo-model-list-head small { color: var(--muted); }
 .saldo-model-groups {
   display: grid;
+  align-content: start;
+  flex: 1 1 auto;
   gap: 12px;
-  max-height: 56vh;
-  padding-right: 4px;
-  overflow: auto;
+  min-height: 90px;
+  padding-right: 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .saldo-model-group-card {
   padding: 12px;
@@ -4038,10 +4066,14 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
 .saldo-model-add-account { margin-top: 8px; }
 .saldo-model-footer {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: auto 1fr auto auto;
   gap: 9px;
   align-items: center;
   margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
 }
 .danger-action { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 @media (max-width: 640px) {
@@ -4050,6 +4082,9 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
   .saldo-model-toolbar { align-items: stretch; flex-direction: column; }
   .saldo-model-fields { grid-template-columns: 1fr; }
   .saldo-model-group-head { grid-template-columns: 1fr 1fr; }
+  .saldo-model-head { flex-direction: column; }
+  .saldo-model-head-actions { width: 100%; justify-content: space-between; }
+  .saldo-model-card { padding: 16px; }
   .saldo-model-footer { grid-template-columns: 1fr 1fr; }
   .saldo-model-footer > span { display: none; }
 }
