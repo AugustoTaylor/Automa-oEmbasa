@@ -3889,7 +3889,7 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
 .saldo-model-head p { margin: 4px 0 0; text-align: left; }
 .saldo-model-fields {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .8fr) minmax(160px, .8fr) auto;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .8fr) auto;
   gap: 10px;
   align-items: end;
   margin-bottom: 14px;
@@ -3939,6 +3939,11 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
   background: var(--surface-strong);
   color: var(--ink);
 }
+.saldo-model-group-name input[readonly],
+#saldoModeloNome[readonly] {
+  cursor: default;
+  user-select: text;
+}
 .saldo-model-active-toggle {
   display: inline-flex;
   align-items: center;
@@ -3950,6 +3955,37 @@ body.operational-modals-split #batchConfirmModal .contact-success-card {
 }
 .saldo-model-active-toggle input,
 .saldo-model-account-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
+.saldo-model-accounts-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 2px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+.saldo-model-accounts-toggle:hover { color: var(--accent); }
+.saldo-model-accounts-arrow {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+}
+.saldo-model-accounts-content { padding-top: 3px; }
+.saldo-model-accounts-content.hidden { display: none; }
 .saldo-model-account-table { overflow-x: auto; }
 .saldo-model-account-row {
   display: grid;

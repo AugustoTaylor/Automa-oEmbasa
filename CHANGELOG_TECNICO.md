@@ -1,5 +1,12 @@
 # Registro técnico de alterações
 
+## Quarta-feira, 28/10/2026 - Versao 1.8.2
+
+- O nome do modelo e os nomes dos grupos detectados ficam visiveis, mas bloqueados para edicao.
+- A configuracao de celula do periodo foi retirada da interface e continua preservada internamente.
+- Cada grupo passa a abrir suas contas em uma secao recolhivel, fechada por padrao.
+- Novos grupos e contas sao abertos e trazidos automaticamente para a area visivel durante a criacao.
+
 ## Terça-feira, 27/10/2026 - Versao 1.8.1
 
 - O editor de modelos de saldo agora informa cada divergencia encontrada antes de salvar.

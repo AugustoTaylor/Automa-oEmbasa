@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
   github: "https://github.com/AugustoTaylor"
@@ -2862,9 +2862,7 @@ async function carregarModelosSaldoContas(force = false) {
 function sincronizarCamposModeloSaldoContas() {
   const modelo = state.saldoModeloRascunho;
   if (!modelo) return null;
-  modelo.nome = String(el("saldoModeloNome")?.value || "").trim();
   modelo.aba = String(el("saldoModeloAba")?.value || "").trim();
-  modelo.celula_periodo = String(el("saldoModeloCelulaPeriodo")?.value || "").trim().toUpperCase();
   return modelo;
 }
 
@@ -2883,7 +2881,6 @@ function renderizarEditorModeloSaldoContas() {
   const gruposNode = el("saldoModeloGrupos");
   if (!modelo || !gruposNode) return;
   if (el("saldoModeloNome")) el("saldoModeloNome").value = modelo.nome || "";
-  if (el("saldoModeloCelulaPeriodo")) el("saldoModeloCelulaPeriodo").value = modelo.celula_periodo || "";
   const abaSelect = el("saldoModeloAba");
   if (abaSelect) {
     const abas = Array.isArray(state.saldoPlanilhaAnalise?.abas) ? state.saldoPlanilhaAnalise.abas : [modelo.aba];
@@ -2900,6 +2897,7 @@ function renderizarEditorModeloSaldoContas() {
   (modelo.grupos || []).forEach((grupo, grupoIndice) => {
     const card = document.createElement("section");
     card.className = "saldo-model-group-card";
+    card.dataset.grupoIndice = String(grupoIndice);
     const head = document.createElement("div");
     head.className = "saldo-model-group-head";
     const nameWrap = document.createElement("label");
@@ -2911,6 +2909,11 @@ function renderizarEditorModeloSaldoContas() {
       "Ex.: ABACATE MOVIMENTO",
       (valor) => { grupo.nome = valor; }
     );
+    nameInput.readOnly = !grupo._novo;
+    nameInput.setAttribute("aria-readonly", String(!grupo._novo));
+    nameInput.title = grupo._novo
+      ? "Defina o nome do novo grupo antes de salvar."
+      : "O nome foi lido da planilha e nao pode ser alterado aqui.";
     nameWrap.append(nameLabel, nameInput);
 
     const totalWrap = document.createElement("label");
@@ -2938,6 +2941,29 @@ function renderizarEditorModeloSaldoContas() {
     removeGroup.textContent = "Excluir grupo";
     removeGroup.addEventListener("click", () => removerGrupoModeloSaldoContas(grupoIndice));
     head.append(nameWrap, totalWrap, activeLabel, removeGroup);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "saldo-model-accounts-toggle";
+    const toggleArrow = document.createElement("span");
+    toggleArrow.className = "saldo-model-accounts-arrow";
+    const toggleText = document.createElement("span");
+    toggleText.textContent = `Contas (${(grupo.contas || []).length})`;
+    toggle.append(toggleArrow, toggleText);
+
+    const content = document.createElement("div");
+    content.className = "saldo-model-accounts-content";
+    const atualizarContasAbertas = () => {
+      const aberto = grupo._contas_abertas === true;
+      content.classList.toggle("hidden", !aberto);
+      toggle.classList.toggle("is-open", aberto);
+      toggle.setAttribute("aria-expanded", String(aberto));
+      toggleArrow.textContent = aberto ? "▾" : "›";
+    };
+    toggle.addEventListener("click", () => {
+      grupo._contas_abertas = grupo._contas_abertas !== true;
+      atualizarContasAbertas();
+    });
 
     const table = document.createElement("div");
     table.className = "saldo-model-account-table";
@@ -3024,8 +3050,10 @@ function renderizarEditorModeloSaldoContas() {
     add.className = "ghost-action saldo-model-add-account";
     add.textContent = "Adicionar conta";
     add.addEventListener("click", () => adicionarContaModeloSaldoContas(grupoIndice));
-    card.append(head, table, add);
+    content.append(table, add);
+    card.append(head, toggle, content);
     gruposNode.appendChild(card);
+    atualizarContasAbertas();
   });
   const excluir = el("saldoModeloExcluirButton");
   excluir?.classList.toggle("hidden", !modelo.id);
@@ -3042,7 +3070,7 @@ function abrirEditorModeloSaldoContas() {
   erro?.classList.add("hidden");
   renderizarEditorModeloSaldoContas();
   openModal("saldoModeloModal");
-  window.setTimeout(() => el("saldoModeloNome")?.focus(), 100);
+  window.setTimeout(() => el("saldoModeloAba")?.focus(), 100);
 }
 
 function fecharEditorModeloSaldoContas() {
@@ -3055,15 +3083,23 @@ function adicionarGrupoModeloSaldoContas() {
   const modelo = state.saldoModeloRascunho;
   if (!modelo) return;
   modelo.grupos = Array.isArray(modelo.grupos) ? modelo.grupos : [];
+  const novoIndice = modelo.grupos.length;
   modelo.grupos.push({
     id: "",
     nome: `NOVO GRUPO ${modelo.grupos.length + 1}`,
     ativo: true,
     celula_cabecalho: "",
     celula_total: "",
-    contas: []
+    contas: [],
+    _novo: true,
+    _contas_abertas: true
   });
   renderizarEditorModeloSaldoContas();
+  window.setTimeout(() => {
+    const card = el("saldoModeloGrupos")?.querySelector(`[data-grupo-indice="${novoIndice}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    card?.querySelector(".saldo-model-group-name input")?.focus();
+  }, 50);
 }
 
 function removerGrupoModeloSaldoContas(indice) {
@@ -3076,6 +3112,7 @@ function adicionarContaModeloSaldoContas(grupoIndice) {
   sincronizarCamposModeloSaldoContas();
   const grupo = state.saldoModeloRascunho?.grupos?.[grupoIndice];
   if (!grupo) return;
+  grupo._contas_abertas = true;
   grupo.contas = Array.isArray(grupo.contas) ? grupo.contas : [];
   grupo.contas.push({
     id: "",
@@ -3090,6 +3127,12 @@ function adicionarContaModeloSaldoContas(grupoIndice) {
     motivo_bloqueio: ""
   });
   renderizarEditorModeloSaldoContas();
+  window.setTimeout(() => {
+    const card = el("saldoModeloGrupos")?.querySelector(`[data-grupo-indice="${grupoIndice}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const linhas = card?.querySelectorAll(".saldo-model-account-row:not(.saldo-model-account-labels)");
+    linhas?.[linhas.length - 1]?.querySelector("input")?.focus();
+  }, 50);
 }
 
 function removerContaModeloSaldoContas(grupoIndice, contaIndice) {

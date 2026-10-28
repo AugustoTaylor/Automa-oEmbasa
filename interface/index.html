@@ -214,7 +214,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.8.1</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.8.2</span>
           </div>
         </div>
       </div>
@@ -1521,15 +1521,11 @@
       <div class="saldo-model-fields">
         <label class="field">
           <span>Nome do modelo</span>
-          <input id="saldoModeloNome" type="text" maxlength="90" placeholder="Saldo de contas mensal" />
+          <input id="saldoModeloNome" type="text" maxlength="90" placeholder="Saldo de contas mensal" readonly aria-readonly="true" />
         </label>
         <label class="field">
           <span>Aba analisada</span>
           <select id="saldoModeloAba"></select>
-        </label>
-        <label class="field">
-          <span>Celula do periodo (opcional)</span>
-          <input id="saldoModeloCelulaPeriodo" type="text" maxlength="12" placeholder="C1" />
         </label>
         <button type="button" class="ghost-action saldo-detect-tab-button" onclick="detectarAbaEditorSaldoContas()">
           Detectar esta aba
