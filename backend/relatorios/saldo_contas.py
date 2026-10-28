@@ -869,14 +869,16 @@ def _analisar_planilha_com_modelo(caminho, modelo) -> dict:
         abas = list(workbook_formulas.sheetnames)
         aba = configuracao["aba"]
         if aba not in workbook_formulas.sheetnames:
+            erro_aba = f'A aba configurada "{aba}" nao foi encontrada na planilha.'
             return {
                 "ok": False,
-                "msg": f'A aba configurada "{aba}" nao foi encontrada na planilha.',
+                "msg": erro_aba,
                 "caminho": str(arquivo),
                 "arquivo": arquivo.name,
                 "abas": abas,
                 "modelo": configuracao,
                 "modelo_valido": False,
+                "erros_modelo": [erro_aba],
             }
 
         sheet_formulas = workbook_formulas[aba]
@@ -1009,6 +1011,7 @@ def _analisar_planilha_com_modelo(caminho, modelo) -> dict:
             "grupos": grupos_disponiveis,
             "verificacoes": [],
             "avisos": list(dict.fromkeys(avisos)),
+            "erros_modelo": list(dict.fromkeys(erros)),
         }
     finally:
         if workbook_formulas is not None:

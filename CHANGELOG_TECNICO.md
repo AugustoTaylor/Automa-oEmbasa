@@ -1,5 +1,12 @@
 # Registro técnico de alterações
 
+## Terça-feira, 27/10/2026 - Versao 1.8.1
+
+- O editor de modelos de saldo agora informa cada divergencia encontrada antes de salvar.
+- O aviso identifica a celula, a conta esperada e o conteudo efetivamente encontrado na planilha.
+- Mensagens com varias divergencias passam a ser exibidas em linhas separadas no editor.
+- O editor esclarece que as contas devem existir na planilha e que o modelo apenas mapeia as celulas.
+
 ## Terça-feira, 27/10/2026 - Versao 1.8.0
 
 **Modelos editáveis de saldo de contas e autenticação compartilhada**

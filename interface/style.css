@@ -1717,6 +1717,10 @@ input.is-loading {
   color: var(--danger);
 }
 
+#saldoModeloErro {
+  white-space: pre-line;
+}
+
 .field-message.error {
   color: var(--danger);
 }

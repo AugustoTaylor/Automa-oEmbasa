@@ -1111,9 +1111,23 @@ class API:
                 modelo=modelo,
             )
             if not analise.get("modelo_valido"):
+                diferencas = [
+                    str(item).strip()
+                    for item in (analise.get("erros_modelo") or [])
+                    if str(item).strip()
+                ]
+                mensagem = "Corrija as diferencas do modelo antes de salva-lo."
+                if diferencas:
+                    mensagem = (
+                        "Nao foi possivel salvar porque o modelo nao corresponde a planilha:\n- "
+                        + "\n- ".join(diferencas[:8])
+                    )
+                    if len(diferencas) > 8:
+                        mensagem += f"\n- E mais {len(diferencas) - 8} diferenca(s)."
                 return {
                     "ok": False,
-                    "msg": "Corrija as diferencas do modelo antes de salva-lo.",
+                    "msg": mensagem,
+                    "diferencas": diferencas,
                     "analise": _serializar_para_front(analise),
                 }
             salvo = salvar_modelo_saldo_contas_local(modelo)

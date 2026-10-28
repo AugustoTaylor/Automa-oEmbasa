@@ -18,6 +18,7 @@ from backend.relatorios.saldo_contas import (
     preencher_planilha_saldo_contas,
     planejar_consultas_saldo_contas,
 )
+from interface import API
 
 
 class SaldoContasPlanilhaTests(unittest.TestCase):
@@ -141,6 +142,25 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
 
         self.assertFalse(analise["modelo_valido"])
         self.assertTrue(any("possui formula" in aviso for aviso in analise["avisos"]))
+        self.assertTrue(any("possui formula" in erro for erro in analise["erros_modelo"]))
+
+    def test_salvar_modelo_invalido_informa_a_celula_exata(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha_dinamica(Path(temporario))
+            modelo = detectar_modelo_saldo_contas(caminho, "OUT.26")["modelo"]
+            modelo["grupos"][0]["contas"][0]["celula_conta"] = "E20"
+            modelo["grupos"][0]["contas"][0]["celula_valor"] = "F20"
+            api = API.__new__(API)
+            api._usuario_autenticado = {"matricula": "001234"}
+            resultado = api.salvar_modelo_saldo_contas({
+                "caminho": str(caminho),
+                "modelo": modelo,
+            })
+
+        self.assertFalse(resultado["ok"])
+        self.assertIn("E20: esperada a conta 11311001", resultado["msg"])
+        self.assertIn("encontrado vazio", resultado["msg"])
+        self.assertEqual(resultado["diferencas"], resultado["analise"]["erros_modelo"])
 
     def test_modelo_valido_com_41_contas(self):
         with tempfile.TemporaryDirectory() as temporario:
