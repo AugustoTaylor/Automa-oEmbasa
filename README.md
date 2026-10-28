@@ -12,6 +12,8 @@ Sistema desktop em Python + pywebview para automação assistida de pedidos, fat
 - Validação de CPF/CNPJ, tipo de solicitação, valores e dados do empreendimento.
 - Autopreenchimento de endereço por CEP.
 - Build empresarial em modo `onedir` para uso em pasta de rede.
+- Login/cadastro compartilhado por matrícula, com senha derivada por PBKDF2 e lembrança protegida pelo Windows.
+- Modelos editáveis para detectar, confirmar e reutilizar grupos e contas em relatórios mensais.
 
 ## Requisitos de execução
 

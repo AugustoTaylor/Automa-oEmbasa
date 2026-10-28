@@ -10,7 +10,7 @@ from pathlib import Path
 DEFAULT_SETTINGS = {
     "app": {
         "name": "EMBASA",
-        "version": "1.7.3",
+        "version": "1.8.0",
         "company_code": "EMBA",
     },
     "security": {
@@ -47,6 +47,15 @@ DEFAULT_SETTINGS = {
     },
     "startup": {
         "require_sap_session": False,
+    },
+    "auth": {
+        "enabled": True,
+        "shared_dir": "dados_compartilhados/autenticacao",
+        "db_file": "usuarios.json",
+    },
+    "saldo_contas": {
+        "shared_dir": "dados_compartilhados/saldo_contas",
+        "models_file": "modelos.json",
     },
     "timing": {
         "action_delay_seconds": 0,

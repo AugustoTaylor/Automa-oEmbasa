@@ -1,6 +1,6 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.4.31
-Atualizado em: 02/06/2026
+Versão: 1.8.0
+Atualizado em: 27/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
 O atalho do usuário deve apontar para:
@@ -35,7 +35,21 @@ Esse cache guarda dados fixos reutilizáveis do XD03:
 A pasta é criada automaticamente na primeira execução. Ela não deve ser apagada ao publicar nova versão.
 O script publicar_rede.ps1 preserva dados_compartilhados durante a cópia para a rede.
 
-4. TEMPO DE DEMONSTRAÇÃO DAS AÇÕES
+4. LOGIN, CADASTRO E MODELOS DE SALDO
+Os dados compartilhados abaixo ficam fora do build e são preservados nas atualizações:
+- dados_compartilhados\autenticacao\usuarios.json
+- dados_compartilhados\saldo_contas\modelos.json
+
+O arquivo de usuários não contém senhas legíveis. Ele guarda somente hash PBKDF2-SHA256, salt e tokens protegidos.
+A opção "Lembrar senha" grava no computador do usuário apenas um token criptografado pela proteção de dados do Windows.
+Não copie, edite manualmente nem apague esses arquivos durante uma atualização.
+
+Na primeira utilização, o funcionário deve escolher Cadastrar e informar matrícula e uma senha com ao menos 8 caracteres, letras e números.
+Nas utilizações seguintes, o sistema faz o check-in na base compartilhada. Se a pasta da rede estiver indisponível, o acesso é bloqueado em vez de criar um cadastro local paralelo.
+
+Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.
+
+5. TEMPO DE DEMONSTRAÇÃO DAS AÇÕES
 No arquivo embasa_settings.json existe a seção:
 
 "timing": {
@@ -50,7 +64,7 @@ Uso:
 Depois de alterar esse valor, feche e abra o sistema novamente.
 Não use esse atraso em produção normal, apenas para teste, apresentação ou acompanhamento visual.
 
-5. COMO GERAR UMA NOVA VERSÃO
+6. COMO GERAR UMA NOVA VERSÃO
 No computador de manutenção, dentro da pasta do código-fonte, rode:
 
 powershell -ExecutionPolicy Bypass -File .\build_empresarial.ps1
@@ -58,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\build_empresarial.ps1
 Esse comando recria a .venv local, instala as dependências e gera:
 dist\EmbasaPedidosSAP
 
-6. COMO PUBLICAR NA REDE
+7. COMO PUBLICAR NA REDE
 Depois do build, rode:
 
 powershell -ExecutionPolicy Bypass -File .\publicar_rede.ps1
@@ -70,7 +84,7 @@ Se precisar publicar em outro local, informe o destino manualmente:
 
 powershell -ExecutionPolicy Bypass -File .\publicar_rede.ps1 -DestinoRede "CAMINHO_DA_REDE"
 
-7. SOBRE EXECUTAR PELA REDE
+8. SOBRE EXECUTAR PELA REDE
 Quando aberto pela unidade N:, o sistema copia automaticamente a pasta do aplicativo para:
 %LOCALAPPDATA%\EMBASA\Runtime
 
@@ -80,7 +94,7 @@ Na primeira abertura após uma atualização pode demorar alguns segundos a mais
 
 Mesmo rodando pela cópia local, o cache compartilhado continua apontando para a pasta original da rede.
 
-8. SE DER ERRO ANTES DA INTERFACE ABRIR
+9. SE DER ERRO ANTES DA INTERFACE ABRIR
 Verifique o log:
 %TEMP%\EMBASA\startup.log
 
@@ -91,14 +105,16 @@ Erros comuns:
 - Microsoft Edge WebView2 Runtime ausente.
 - .NET Desktop Runtime ausente.
 
-9. TESTE RÁPIDO APÓS PUBLICAR
+10. TESTE RÁPIDO APÓS PUBLICAR
 - Abrir o SAP e fazer login.
 - Abrir o atalho do EmbasaPedidosSAP.exe pela rede.
+- Cadastrar uma matrícula de teste ou entrar com usuário existente.
+- Fechar e abrir novamente para confirmar o check-in com "Lembrar senha".
 - Confirmar que a interface abriu.
 - Fazer um teste com dados reais controlados.
 - Repetir o mesmo CPF/CNPJ para confirmar que o cliente foi recuperado do cache.
 - Verificar se o progresso em tempo real, cancelamento e logs aparecem corretamente.
 
-10. OBSERVAÇÃO
+11. OBSERVAÇÃO
 Não é necessário instalar Python, VS Code ou Git nos computadores dos usuários finais.
 Python só é necessário no computador de manutenção para gerar novo build.

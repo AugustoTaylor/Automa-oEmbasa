@@ -7,11 +7,18 @@ import re
 import threading
 import time
 import traceback
+from functools import wraps
 from pathlib import Path
 
 import webview
 
 from backend.controller import SAPController
+from backend.auth import (
+    autenticar_usuario as autenticar_usuario_compartilhado,
+    cadastrar_usuario as cadastrar_usuario_compartilhado,
+    encerrar_acesso_lembrado,
+    verificar_acesso_lembrado,
+)
 from backend.documentos import analisar_doc, limpar_doc
 from backend.flows.cliente_cadastro import (
     adicionar_setores_cliente,
@@ -40,15 +47,21 @@ from backend.history import (
 from backend.logger import Logger
 from backend.relatorios.saldo_contas import (
     ABA_MODELO_SALDO_CONTAS,
-    CONTAS_APLICACAO_MODELO,
     analisar_planilha_saldo_contas as analisar_arquivo_saldo_contas,
+    detectar_modelo_saldo_contas as detectar_modelo_arquivo_saldo_contas,
     planejar_consultas_saldo_contas,
     preencher_planilha_saldo_contas,
+)
+from backend.relatorios.saldo_contas_modelos import (
+    excluir_modelo_saldo_contas as excluir_modelo_saldo_contas_salvo,
+    listar_modelos_saldo_contas as listar_modelos_saldo_contas_salvos,
+    obter_modelo_saldo_contas,
+    salvar_modelo_saldo_contas as salvar_modelo_saldo_contas_local,
 )
 from backend.sap_connection import conectar_sap
 from backend.utils.sap_waits import SapKeepAlive
 from backend.support_mail import process_support_request
-from backend.settings import SETTINGS, get_runtime_root
+from backend.settings import SETTINGS, get_runtime_root, get_setting
 from backend.validators import validar_dados, validar_dados_multa_contratual
 from backend.valores import analisar_valor, analisar_valor_sem_limite
 
@@ -76,6 +89,20 @@ _PERFIS_DESENVOLVEDOR = {
     "linkedin": "https://www.linkedin.com/in/augusto-taylor-425285364/",
     "github": "https://github.com/AugustoTaylor",
 }
+
+
+def _requer_autenticacao(metodo):
+    @wraps(metodo)
+    def protegido(self, *args, **kwargs):
+        if get_setting("auth", "enabled", default=True) and not self._usuario_autenticado:
+            return {
+                "ok": False,
+                "auth_required": True,
+                "msg": "Faca login com sua matricula para continuar.",
+            }
+        return metodo(self, *args, **kwargs)
+
+    return protegido
 
 
 class _ConfirmacaoOperacional:
@@ -144,6 +171,7 @@ class API:
         self._flow_lock = threading.Lock()
         self._sap_activity_lock = threading.Lock()
         self._flow_running = False
+        self._usuario_autenticado = None
         self._extrato_running = False
         self._cancel_event = threading.Event()
         self._extrato_pause_event = threading.Event()
@@ -159,6 +187,63 @@ class API:
 
     def set_window(self, window):
         self._window = window
+
+    def verificar_login_lembrado(self, versao_app=""):
+        if not get_setting("auth", "enabled", default=True):
+            self._usuario_autenticado = {"matricula": "ACESSO-LIVRE"}
+            return {"ok": True, "usuario": self._usuario_autenticado, "lembrado": False}
+        try:
+            resultado = verificar_acesso_lembrado(versao_app=str(versao_app or ""))
+            if resultado.get("ok"):
+                self._usuario_autenticado = resultado.get("usuario")
+            return _serializar_para_front(resultado)
+        except Exception as exc:
+            self._usuario_autenticado = None
+            return {
+                "ok": False,
+                "lembrado": False,
+                "msg": f"Nao foi possivel verificar o acesso compartilhado: {exc}",
+            }
+
+    def autenticar_usuario(self, dados):
+        try:
+            payload = dict(dados or {})
+            resultado = autenticar_usuario_compartilhado(
+                payload.get("matricula"),
+                payload.get("senha"),
+                lembrar=bool(payload.get("lembrar")),
+                versao_app=str(payload.get("versao_app") or ""),
+            )
+            self._usuario_autenticado = resultado.get("usuario")
+            return _serializar_para_front(resultado)
+        except Exception as exc:
+            self._usuario_autenticado = None
+            return {"ok": False, "msg": str(exc) or "Nao foi possivel entrar."}
+
+    def cadastrar_usuario(self, dados):
+        try:
+            payload = dict(dados or {})
+            resultado = cadastrar_usuario_compartilhado(
+                payload.get("matricula"),
+                payload.get("senha"),
+                lembrar=bool(payload.get("lembrar")),
+                versao_app=str(payload.get("versao_app") or ""),
+            )
+            self._usuario_autenticado = resultado.get("usuario")
+            return _serializar_para_front(resultado)
+        except Exception as exc:
+            self._usuario_autenticado = None
+            return {"ok": False, "msg": str(exc) or "Nao foi possivel cadastrar."}
+
+    def sair_usuario(self):
+        self._usuario_autenticado = None
+        return _serializar_para_front(encerrar_acesso_lembrado())
+
+    def obter_usuario_atual(self):
+        return {
+            "ok": bool(self._usuario_autenticado),
+            "usuario": _serializar_para_front(self._usuario_autenticado),
+        }
 
     # Abre somente os perfis publicos previamente autorizados no navegador padrao.
     def abrir_perfil_desenvolvedor(self, rede):
@@ -450,6 +535,7 @@ class API:
             cancel_event=self._cancel_event,
         )
 
+    @_requer_autenticacao
     def confirmar_aviso_operacional(self, notice_id):
         with self._notice_lock:
             evento = self._notice_events.pop(str(notice_id or ""), None)
@@ -461,6 +547,7 @@ class API:
         return {"ok": True}
 
     # Entrada principal chamada pelo botao Gerar Boleto.
+    @_requer_autenticacao
     def gerar_boleto(self, dados):
         resultado_final = {}
         concluido = threading.Event()
@@ -726,6 +813,7 @@ class API:
 
         return _serializar_para_front(resultado_final)
 
+    @_requer_autenticacao
     def gerar_boleto_multa_contratual(self, dados):
         resultado_final = {}
         concluido = threading.Event()
@@ -927,6 +1015,7 @@ class API:
 
         return _serializar_para_front(resultado_final)
 
+    @_requer_autenticacao
     def cadastrar_cliente_sap(self, dados):
         return self._executar_acao_cliente_sap(
             dados,
@@ -934,6 +1023,7 @@ class API:
             "Cadastrando cliente no SAP",
         )
 
+    @_requer_autenticacao
     def cadastrar_cliente_multa_contratual_sap(self, dados):
         payload = dict(dados or {})
         payload["tipo"] = "multa_contratual"
@@ -943,6 +1033,7 @@ class API:
             "Cadastrando cliente de Multa Contratual no SAP",
         )
 
+    @_requer_autenticacao
     def adicionar_setores_cliente_sap(self, dados):
         return self._executar_acao_cliente_sap(
             dados,
@@ -950,12 +1041,39 @@ class API:
             "Cadastrando setores no SAP",
         )
 
-    def analisar_planilha_saldo_contas(self, caminho):
+    @_requer_autenticacao
+    def listar_modelos_saldo_contas(self):
         try:
-            resultado = analisar_arquivo_saldo_contas(
-                caminho,
-                aba_modelo=ABA_MODELO_SALDO_CONTAS,
-            )
+            return {
+                "ok": True,
+                "modelos": _serializar_para_front(listar_modelos_saldo_contas_salvos()),
+            }
+        except Exception as exc:
+            return {"ok": False, "msg": f"Nao foi possivel listar os modelos: {exc}"}
+
+    @_requer_autenticacao
+    def analisar_planilha_saldo_contas(self, caminho, modelo_id=""):
+        try:
+            modelo = obter_modelo_saldo_contas(modelo_id) if modelo_id else None
+            if modelo_id and modelo is None:
+                raise ValueError("O modelo selecionado nao foi encontrado.")
+            if modelo is None:
+                deteccao = detectar_modelo_arquivo_saldo_contas(caminho)
+                resultado = analisar_arquivo_saldo_contas(
+                    caminho,
+                    aba_modelo=deteccao["aba_modelo"],
+                    modelo=deteccao["modelo"],
+                )
+                resultado["requer_confirmacao"] = True
+                resultado["avisos_deteccao"] = deteccao.get("avisos") or []
+                resultado["msg"] = deteccao["msg"]
+            else:
+                resultado = analisar_arquivo_saldo_contas(
+                    caminho,
+                    aba_modelo=modelo["aba"],
+                    modelo=modelo,
+                )
+                resultado["requer_confirmacao"] = False
             return _serializar_para_front(resultado)
         except Exception as exc:
             return {
@@ -963,6 +1081,71 @@ class API:
                 "msg": f"Nao foi possivel analisar a planilha: {exc}",
             }
 
+    @_requer_autenticacao
+    def detectar_modelo_saldo_contas(self, caminho, aba_modelo=""):
+        try:
+            deteccao = detectar_modelo_arquivo_saldo_contas(
+                caminho,
+                aba_modelo=aba_modelo or None,
+            )
+            analise = analisar_arquivo_saldo_contas(
+                caminho,
+                aba_modelo=deteccao["aba_modelo"],
+                modelo=deteccao["modelo"],
+            )
+            analise["requer_confirmacao"] = True
+            analise["avisos_deteccao"] = deteccao.get("avisos") or []
+            analise["msg"] = deteccao["msg"]
+            return _serializar_para_front(analise)
+        except Exception as exc:
+            return {"ok": False, "msg": f"Nao foi possivel detectar as contas: {exc}"}
+
+    @_requer_autenticacao
+    def salvar_modelo_saldo_contas(self, dados):
+        try:
+            payload = dict(dados or {})
+            caminho = str(payload.get("caminho") or "").strip()
+            modelo = payload.get("modelo")
+            analise = analisar_arquivo_saldo_contas(
+                caminho,
+                modelo=modelo,
+            )
+            if not analise.get("modelo_valido"):
+                return {
+                    "ok": False,
+                    "msg": "Corrija as diferencas do modelo antes de salva-lo.",
+                    "analise": _serializar_para_front(analise),
+                }
+            salvo = salvar_modelo_saldo_contas_local(modelo)
+            analise = analisar_arquivo_saldo_contas(
+                caminho,
+                aba_modelo=salvo["aba"],
+                modelo=salvo,
+            )
+            analise["requer_confirmacao"] = False
+            return {
+                "ok": True,
+                "msg": "Modelo salvo e confirmado com sucesso.",
+                "modelo": _serializar_para_front(salvo),
+                "analise": _serializar_para_front(analise),
+                "modelos": _serializar_para_front(listar_modelos_saldo_contas_salvos()),
+            }
+        except Exception as exc:
+            return {"ok": False, "msg": f"Nao foi possivel salvar o modelo: {exc}"}
+
+    @_requer_autenticacao
+    def excluir_modelo_saldo_contas(self, modelo_id):
+        try:
+            removido = excluir_modelo_saldo_contas_salvo(modelo_id)
+            return {
+                "ok": removido,
+                "msg": "Modelo excluido." if removido else "Modelo nao encontrado.",
+                "modelos": _serializar_para_front(listar_modelos_saldo_contas_salvos()),
+            }
+        except Exception as exc:
+            return {"ok": False, "msg": f"Nao foi possivel excluir o modelo: {exc}"}
+
+    @_requer_autenticacao
     def selecionar_planilha_saldo_contas(self, pasta_inicial=""):
         window = self._get_window()
 
@@ -1006,6 +1189,7 @@ class API:
 
         return self.analisar_planilha_saldo_contas(selecionada)
 
+    @_requer_autenticacao
     def executar_saldo_contas_sap(self, dados):
         resultado_final = {}
         concluido = threading.Event()
@@ -1038,14 +1222,20 @@ class API:
                 caminho = str(payload.get("caminho") or "").strip()
                 mes = payload.get("mes")
                 ano = payload.get("ano")
+                modelo_id = str(payload.get("modelo_id") or "").strip()
+                modelo = obter_modelo_saldo_contas(modelo_id) if modelo_id else None
+                if modelo_id and modelo is None:
+                    raise ValueError("O modelo de contas selecionado nao foi encontrado.")
+                aba_modelo = modelo["aba"] if modelo is not None else ABA_MODELO_SALDO_CONTAS
                 analise = analisar_arquivo_saldo_contas(
                     caminho,
-                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                    aba_modelo=aba_modelo,
+                    modelo=modelo,
                 )
 
                 if not analise.get("ok") or not analise.get("modelo_valido"):
                     raise ValueError(
-                        "A planilha precisa passar pela validacao do modelo SET.26 antes da consulta."
+                        "A planilha precisa passar pela confirmacao do modelo antes da consulta."
                     )
 
                 plano = planejar_consultas_saldo_contas(
@@ -1144,8 +1334,9 @@ class API:
                 )
                 planilha = preencher_planilha_saldo_contas(
                     caminho, saldos, mes, ano,
-                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                    aba_modelo=aba_modelo,
                     grupos_selecionados=plano["grupos"],
+                    modelo=modelo,
                 )
                 consulta = {
                     "contas_consultadas": len(destinos),
@@ -1159,7 +1350,8 @@ class API:
                 }
                 analise_saida = analisar_arquivo_saldo_contas(
                     planilha["caminho_saida"],
-                    aba_modelo=ABA_MODELO_SALDO_CONTAS,
+                    aba_modelo=aba_modelo,
+                    modelo=modelo,
                 )
                 self._emitir_progresso(
                     "SALVAR_RELATORIO",
@@ -1220,6 +1412,8 @@ class API:
                     "duracao_segundos": duracao_total,
                     "tempos_consultas": tempos_consultas,
                     "total": float(total),
+                    "modelo_id": modelo_id,
+                    "modelo_nome": modelo.get("nome") if modelo else "Modelo SET.26",
                 }
                 registro_historico = registrar_historico_saldo_contas(
                     dados_historico,
@@ -1302,6 +1496,7 @@ class API:
     def _arquivo_preferencias_extratos(self) -> Path:
         return get_runtime_root() / _EXTRATOS_PREFERENCIAS_ARQUIVO
 
+    @_requer_autenticacao
     def obter_pasta_padrao_extratos(self):
         arquivo = self._arquivo_preferencias_extratos()
 
@@ -1334,6 +1529,7 @@ class API:
 
         return {"ok": True, "pasta_base": str(pasta_base)}
 
+    @_requer_autenticacao
     def selecionar_pasta_base_extratos(self, pasta_inicial="", definir_padrao=True):
         window = self._get_window()
 
@@ -1412,12 +1608,15 @@ class API:
             "salva_como_padrao": bool(definir_padrao),
         }
 
+    @_requer_autenticacao
     def abrir_navegador_caixa(self, navegador="opera"):
         return _serializar_para_front(abrir_navegador_caixa(navegador))
 
+    @_requer_autenticacao
     def diagnosticar_chrome_caixa(self, navegador="opera"):
         return _serializar_para_front(diagnosticar_chrome_caixa(navegador))
 
+    @_requer_autenticacao
     def baixar_extratos_caixa(self, dados):
         resultado_final = {}
         concluido = threading.Event()
@@ -1503,6 +1702,7 @@ class API:
 
         return _serializar_para_front(resultado_final)
 
+    @_requer_autenticacao
     def pausar_extratos_caixa(self):
         with self._flow_lock:
             if not self._flow_running or not self._extrato_running:
@@ -1525,6 +1725,7 @@ class API:
         }
 
     # Solicita parada no proximo ponto seguro do fluxo SAP em execucao.
+    @_requer_autenticacao
     def cancelar_fluxo(self):
         with self._flow_lock:
             if not self._flow_running:
@@ -1554,6 +1755,7 @@ class API:
         }
 
     # Recebe os dados do Fale Conosco e delega validação/envio ao backend.
+    @_requer_autenticacao
     def enviar_atendimento(self, dados):
         try:
             resultado = process_support_request(dados)
@@ -1585,6 +1787,7 @@ class API:
         )
 
     # Retorna informações técnicas usadas para diagnóstico local.
+    @_requer_autenticacao
     def obter_diagnostico(self):
         from backend.flows.xd03 import cache_cliente
 
@@ -1601,6 +1804,7 @@ class API:
         )
 
     # Lista registros gravados no historico compartilhado/local.
+    @_requer_autenticacao
     def listar_historico(self, filtro="", limite=None):
         try:
             return _serializar_para_front(
@@ -1617,6 +1821,7 @@ class API:
             }
 
     # Retorna o detalhe completo de um registro de historico.
+    @_requer_autenticacao
     def obter_historico(self, registro_id):
         try:
             registro = obter_historico_pedido(registro_id)
@@ -1640,6 +1845,7 @@ class API:
         )
 
     # Lista rascunhos de clientes salvos para completar depois.
+    @_requer_autenticacao
     def listar_rascunhos_clientes(self, filtro="", limite=None):
         try:
             return _serializar_para_front(
@@ -1656,6 +1862,7 @@ class API:
             }
 
     # Cria ou atualiza um rascunho de cliente.
+    @_requer_autenticacao
     def salvar_rascunho_cliente(self, payload):
         try:
             item = salvar_rascunho_cliente(payload if isinstance(payload, dict) else {})
@@ -1673,6 +1880,7 @@ class API:
             }
 
     # Remove um rascunho de cliente.
+    @_requer_autenticacao
     def excluir_rascunho_cliente(self, rascunho_id):
         try:
             removido = excluir_rascunho_cliente(rascunho_id)

@@ -1,5 +1,21 @@
 # Registro técnico de alterações
 
+## Terça-feira, 27/10/2026 - Versao 1.8.0
+
+**Modelos editáveis de saldo de contas e autenticação compartilhada**
+
+- A planilha passa a ser analisada automaticamente para identificar grupos, contas SAP, células de destino e contas amarelas individuais.
+- Adicionado editor de modelos: grupos e contas, inclusive os padrões, podem ser renomeados, alterados, desativados ou excluídos sem mudança no código.
+- Novos grupos podem ser detectados pela estrutura vertical da planilha ou cadastrados manualmente, com validação antes da consulta.
+- Modelos confirmados ficam preservados em `dados_compartilhados\saldo_contas`, fora do build substituído nas atualizações.
+- Mantida a exclusão obrigatória da conta `11311000`, evitando o timeout conhecido no SAP.
+- Adicionadas proteções contra conta duplicada, célula de destino repetida e sobrescrita de fórmulas.
+- Criadas telas de login e cadastro com matrícula e senha, além da opção `Lembrar senha`.
+- Senhas são armazenadas somente como hash PBKDF2-SHA256 com salt; o recurso de lembrança usa token protegido pelo Windows e nunca grava a senha.
+- Cadastro, check-in e tokens ficam na pasta compartilhada `dados_compartilhados\autenticacao`, preservada pelo script de publicação.
+- Operações SAP, histórico, rascunhos, extratos e modelos agora exigem sessão autenticada também no backend.
+- Adicionado bloqueio temporário após tentativas consecutivas de senha inválida.
+
 ## Sábado, 24/10/2026 - Versao 1.7.3
 
 **Exclusão da conta SAP com timeout**

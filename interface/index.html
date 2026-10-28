@@ -7,6 +7,63 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="authScreen" class="auth-screen" aria-live="polite">
+    <section class="auth-card" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <img src="embasa_symbol_new.png" alt="" />
+        <div>
+          <p class="section-kicker">Acesso seguro</p>
+          <h1 id="authTitle">EMBASA Pedidos SAP</h1>
+          <p>Entre com sua matricula ou crie o primeiro acesso.</p>
+        </div>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Entrar ou cadastrar">
+        <button id="authLoginTab" class="active" type="button" onclick="mostrarAuthPainel('login')">Entrar</button>
+        <button id="authCadastroTab" type="button" onclick="mostrarAuthPainel('cadastro')">Cadastrar</button>
+      </div>
+
+      <form id="authLoginForm" class="auth-form" onsubmit="entrarNoSistema(event)">
+        <label class="field">
+          <span>Matricula</span>
+          <input id="authLoginMatricula" type="text" inputmode="numeric" autocomplete="username" maxlength="12" placeholder="Digite sua matricula" required />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="authLoginSenha" type="password" autocomplete="current-password" maxlength="128" placeholder="Digite sua senha" required />
+        </label>
+        <label class="auth-remember">
+          <input id="authLoginLembrar" type="checkbox" />
+          <span>Lembrar senha neste computador</span>
+        </label>
+        <button id="authLoginButton" class="primary-action" type="submit">Entrar</button>
+      </form>
+
+      <form id="authCadastroForm" class="auth-form hidden" onsubmit="cadastrarNoSistema(event)">
+        <label class="field">
+          <span>Matricula</span>
+          <input id="authCadastroMatricula" type="text" inputmode="numeric" autocomplete="username" maxlength="12" placeholder="Somente numeros" required />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="authCadastroSenha" type="password" autocomplete="new-password" maxlength="128" placeholder="Minimo de 8 caracteres, com letras e numeros" required />
+        </label>
+        <label class="field">
+          <span>Confirmar senha</span>
+          <input id="authCadastroConfirmacao" type="password" autocomplete="new-password" maxlength="128" placeholder="Digite a senha novamente" required />
+        </label>
+        <label class="auth-remember">
+          <input id="authCadastroLembrar" type="checkbox" checked />
+          <span>Lembrar senha neste computador</span>
+        </label>
+        <button id="authCadastroButton" class="primary-action" type="submit">Criar acesso</button>
+      </form>
+
+      <p id="authError" class="field-message hidden"></p>
+      <p class="auth-security-note">A senha nao e armazenada. O sistema usa hash seguro na pasta compartilhada e protecao do Windows para lembrar o acesso.</p>
+    </section>
+  </div>
+
   <aside id="appSidebar" class="app-sidebar" aria-label="Menu principal">
     <button
       id="sidebarToggle"
@@ -83,6 +140,11 @@
     </nav>
 
     <div class="sidebar-footer" aria-label="Utilit&aacute;rios">
+      <button id="authUserToggle" class="sidebar-utility" type="button" onclick="sairDoSistema()" title="Encerrar acesso">
+        <span class="theme-icon">U</span>
+        <span id="authUserLabel" class="sidebar-label">Sair</span>
+      </button>
+
       <button id="historyToggle" class="sidebar-utility" type="button" onclick="openHistoryModal()">
         <span class="theme-icon">H</span>
         <span class="sidebar-label">Hist&oacute;rico</span>
@@ -152,7 +214,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.7.3</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.8.0</span>
           </div>
         </div>
       </div>
@@ -806,6 +868,23 @@
           </button>
         </div>
 
+        <div id="saldoModeloPainel" class="saldo-model-toolbar hidden">
+          <label class="field saldo-model-select-field">
+            <span>Modelo confirmado</span>
+            <select id="saldoModeloSelect" onchange="selecionarModeloSaldoContas(this.value)">
+              <option value="">Modelo detectado da planilha</option>
+            </select>
+          </label>
+          <div class="saldo-model-toolbar-actions">
+            <button type="button" class="ghost-action" onclick="abrirEditorModeloSaldoContas()">
+              Revisar contas
+            </button>
+            <button type="button" class="ghost-action" onclick="redetectarModeloSaldoContas()">
+              Detectar novamente
+            </button>
+          </div>
+        </div>
+
         <div id="saldoGruposPainel" class="account-group-picker hidden">
           <div class="account-balance-section-head">
             <div>
@@ -855,7 +934,7 @@
 
         <div class="account-balance-note">
           <strong>Consulta automatizada</strong>
-          <span>Escolha os grupos desejados. O sistema consulta as contas em lote, exceto as contas com numero amarelo (consultadas uma a uma), utilizando todo o historico ate o ultimo dia do mes. Somente os grupos selecionados sao preenchidos em uma copia da planilha.</span>
+          <span>O sistema detecta grupos, contas, celulas de valor e destaques amarelos. Revise e salve o modelo antes da consulta. Contas e grupos padrao tambem podem ser alterados, desativados ou excluidos.</span>
         </div>
 
         <div class="flow-actions account-balance-actions">
@@ -1422,6 +1501,60 @@
       >
         Fechar
       </button>
+    </div>
+  </div>
+
+  <div id="saldoModeloModal" class="contact-success-modal hidden" aria-live="polite">
+    <div class="contact-backdrop" onclick="fecharEditorModeloSaldoContas()"></div>
+
+    <div class="contact-success-card saldo-model-card">
+      <div class="contact-head saldo-model-head">
+        <div>
+          <p class="section-kicker">Mapeamento da planilha</p>
+          <h2>Confirmar modelo de contas</h2>
+          <p>Revise o que foi detectado. As alteracoes ficam salvas para os proximos relatorios.</p>
+        </div>
+        <button type="button" class="log-close" onclick="fecharEditorModeloSaldoContas()">Fechar</button>
+      </div>
+
+      <div class="saldo-model-fields">
+        <label class="field">
+          <span>Nome do modelo</span>
+          <input id="saldoModeloNome" type="text" maxlength="90" placeholder="Saldo de contas mensal" />
+        </label>
+        <label class="field">
+          <span>Aba analisada</span>
+          <select id="saldoModeloAba"></select>
+        </label>
+        <label class="field">
+          <span>Celula do periodo (opcional)</span>
+          <input id="saldoModeloCelulaPeriodo" type="text" maxlength="12" placeholder="C1" />
+        </label>
+        <button type="button" class="ghost-action saldo-detect-tab-button" onclick="detectarAbaEditorSaldoContas()">
+          Detectar esta aba
+        </button>
+      </div>
+
+      <div class="saldo-model-list-head">
+        <div>
+          <strong>Grupos e contas</strong>
+          <small>Amarelas foram sugeridas como individuais; as demais, em lote.</small>
+        </div>
+        <button type="button" class="ghost-action" onclick="adicionarGrupoModeloSaldoContas()">Adicionar grupo</button>
+      </div>
+      <div id="saldoModeloGrupos" class="saldo-model-groups"></div>
+      <p id="saldoModeloErro" class="field-message hidden"></p>
+
+      <div class="saldo-model-footer">
+        <button id="saldoModeloExcluirButton" type="button" class="ghost-action danger-action hidden" onclick="excluirModeloSaldoContasAtual()">
+          Excluir modelo
+        </button>
+        <span></span>
+        <button type="button" class="ghost-action" onclick="fecharEditorModeloSaldoContas()">Cancelar</button>
+        <button id="saldoModeloSalvarButton" type="button" class="primary-action" onclick="salvarModeloSaldoContasAtual()">
+          Salvar e usar
+        </button>
+      </div>
     </div>
   </div>
 

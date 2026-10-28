@@ -13,6 +13,8 @@ from openpyxl.styles import PatternFill
 from backend.relatorios.saldo_contas import (
     CONTAS_APLICACAO_MODELO,
     analisar_planilha_saldo_contas,
+    detectar_modelo_saldo_contas,
+    normalizar_modelo_saldo_contas,
     preencher_planilha_saldo_contas,
     planejar_consultas_saldo_contas,
 )
@@ -50,6 +52,95 @@ class SaldoContasPlanilhaTests(unittest.TestCase):
         workbook.save(caminho)
         workbook.close()
         return caminho
+
+    def _criar_planilha_dinamica(self, pasta: Path):
+        caminho = pasta / "modelo-dinamico.xlsx"
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "OUT.26"
+        sheet["A1"] = date(2026, 10, 1)
+        sheet["A3"] = "ABACATE MOVIMENTO"
+        sheet["A4"] = 11311001
+        sheet["A5"] = 11311002
+        sheet["A4"].fill = PatternFill(fill_type="solid", fgColor="FFFFFF00")
+        sheet["A6"] = 0
+        sheet["B6"] = "=SUM(B4:B5)"
+        workbook.save(caminho)
+        workbook.close()
+        return caminho
+
+    def test_detecta_grupo_novo_e_modos_pela_cor(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha_dinamica(Path(temporario))
+            deteccao = detectar_modelo_saldo_contas(caminho, "OUT.26")
+
+        self.assertTrue(deteccao["ok"])
+        modelo = deteccao["modelo"]
+        self.assertEqual(modelo["aba"], "OUT.26")
+        self.assertEqual(modelo["celula_periodo"], "A1")
+        self.assertEqual(len(modelo["grupos"]), 1)
+        grupo = modelo["grupos"][0]
+        self.assertEqual(grupo["nome"], "ABACATE MOVIMENTO")
+        self.assertEqual(grupo["celula_total"], "A6")
+        self.assertEqual([item["conta"] for item in grupo["contas"]], ["11311001", "11311002"])
+        self.assertEqual([item["modo"] for item in grupo["contas"]], ["individual", "lote"])
+        self.assertEqual([item["celula_valor"] for item in grupo["contas"]], ["B4", "B5"])
+
+    def test_modelo_detectado_pode_alterar_e_excluir_contas_padrao(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha_dinamica(Path(temporario))
+            modelo = detectar_modelo_saldo_contas(caminho, "OUT.26")["modelo"]
+            modelo["nome"] = "Modelo editado"
+            modelo["grupos"][0]["nome"] = "ABACATE ESPECIAL"
+            modelo["grupos"][0]["contas"].pop(1)
+            modelo = normalizar_modelo_saldo_contas(modelo)
+            analise = analisar_planilha_saldo_contas(caminho, modelo=modelo)
+
+        self.assertTrue(analise["modelo_valido"])
+        self.assertEqual(analise["modelo_nome"], "Modelo editado")
+        self.assertEqual(analise["grupos"][0]["nome"], "ABACATE ESPECIAL")
+        self.assertEqual(analise["grupos"][0]["quantidade"], 1)
+
+    def test_modelo_dinamico_preenche_copia_e_total_sem_alterar_formula(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha_dinamica(Path(temporario))
+            original = caminho.read_bytes()
+            modelo = detectar_modelo_saldo_contas(caminho, "OUT.26")["modelo"]
+            saida = preencher_planilha_saldo_contas(
+                caminho,
+                {"11311001": Decimal("10.25"), "11311002": Decimal("20.75")},
+                2,
+                2028,
+                grupos_selecionados=[modelo["grupos"][0]["id"]],
+                modelo=modelo,
+            )
+            self.assertEqual(caminho.read_bytes(), original)
+            workbook = load_workbook(saida["caminho_saida"], data_only=False)
+            try:
+                sheet = workbook["OUT.26"]
+                self.assertEqual(sheet["B4"].value, 10.25)
+                self.assertEqual(sheet["B5"].value, 20.75)
+                self.assertEqual(sheet["A6"].value, 31)
+                self.assertEqual(sheet["B6"].value, "=SUM(B4:B5)")
+                self.assertEqual(sheet["A1"].value.date(), date(2028, 2, 1))
+            finally:
+                workbook.close()
+
+    def test_modelo_bloqueia_destino_com_formula(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            caminho = self._criar_planilha_dinamica(Path(temporario))
+            workbook = load_workbook(caminho)
+            workbook["OUT.26"]["B4"] = "=1+1"
+            workbook.save(caminho)
+            workbook.close()
+            modelo = detectar_modelo_saldo_contas(caminho, "OUT.26")["modelo"]
+            primeira = modelo["grupos"][0]["contas"][0]
+            primeira["ativo"] = True
+            primeira["bloqueada"] = False
+            analise = analisar_planilha_saldo_contas(caminho, modelo=modelo)
+
+        self.assertFalse(analise["modelo_valido"])
+        self.assertTrue(any("possui formula" in aviso for aviso in analise["avisos"]))
 
     def test_modelo_valido_com_41_contas(self):
         with tempfile.TemporaryDirectory() as temporario:

@@ -134,6 +134,8 @@ def copy_runtime_to_local(source_dir: Path, target_dir: Path) -> None:
             str(source_dir),
             str(target_dir),
             "/MIR",
+            "/XD",
+            str(source_dir / "dados_compartilhados"),
             "/R:1",
             "/W:1",
             "/MT:8",
@@ -159,7 +161,11 @@ def copy_runtime_to_local(source_dir: Path, target_dir: Path) -> None:
         write_startup_log((resultado.stderr or resultado.stdout or "").strip())
         shutil.rmtree(target_dir, ignore_errors=True)
 
-    shutil.copytree(source_dir, target_dir)
+    shutil.copytree(
+        source_dir,
+        target_dir,
+        ignore=shutil.ignore_patterns("dados_compartilhados"),
+    )
     write_startup_log("Runtime local preparado com copytree.")
 
 
