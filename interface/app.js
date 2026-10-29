@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.7";
+const APP_VERSION = "1.8.8";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
@@ -1016,6 +1016,46 @@ function cloneEnderecoParcial(endereco = {}) {
   };
 }
 
+function cloneItemEmpreendimentoFila(item = {}, defaults = {}) {
+  const endereco = cloneEnderecoParcial(item || {});
+  const tipo = String(item.tipo || defaults.tipo || "").trim();
+  const valor = String(item.valor || defaults.valor || "").trim();
+  const modoValor = String(item.modo_valor || defaults.modo_valor || "auto").trim() || "auto";
+
+  return {
+    ...endereco,
+    tipo,
+    tipo_label: getTipoSolicitacaoLabel(tipo),
+    valor,
+    modo_valor: modoValor
+  };
+}
+
+function configuracaoSolicitacaoAtual() {
+  const tipo = String(el("tipo")?.value || "").trim();
+
+  return {
+    tipo,
+    tipo_label: getTipoSolicitacaoLabel(tipo),
+    valor: String(el("valor")?.value || "").trim(),
+    modo_valor: state.valueMode || "auto"
+  };
+}
+
+function aplicarConfiguracaoSolicitacao(item = {}) {
+  if (item.tipo && el("tipo")) {
+    el("tipo").value = item.tipo;
+    atualizarTipo();
+  }
+
+  if (item.valor && el("valor")) {
+    el("valor").value = item.valor;
+  }
+
+  state.valueMode = item.modo_valor || state.valueMode || "auto";
+  atualizarModoValorUI();
+}
+
 function formatarEnderecoResumo(endereco) {
   const cepResumo = endereco.sem_cep
     ? "SEM CEP"
@@ -1105,15 +1145,18 @@ function renderizarFilaEmpreendimentos() {
 
   queue.className = "batch-queue";
   queue.innerHTML = state.empreendimentosFila
-    .map((endereco, index) => `
-      <div class="batch-item">
-        <div>
-          <strong>${index + 1}. ${escapeHtml(endereco.empreendimento)}</strong>
-          <small>${escapeHtml(formatarEnderecoResumo(endereco))}</small>
+    .map((endereco, index) => {
+      const tipoLabel = endereco.tipo_label || getTipoSolicitacaoLabel(endereco.tipo);
+      return `
+        <div class="batch-item">
+          <div>
+            <strong>${index + 1}. ${escapeHtml(endereco.empreendimento)}</strong>
+            <small>${escapeHtml(tipoLabel)} | ${escapeHtml(formatarEnderecoResumo(endereco))}</small>
+          </div>
+          <button type="button" onclick="removerEmpreendimentoDaFila(${index})">Remover</button>
         </div>
-        <button type="button" onclick="removerEmpreendimentoDaFila(${index})">Remover</button>
-      </div>
-    `)
+      `;
+    })
     .join("");
 }
 
@@ -1124,10 +1167,19 @@ function adicionarEmpreendimentoNaFila() {
     return;
   }
 
-  state.empreendimentosFila.push(cloneEndereco(validacao.endereco));
+  const itemFila = cloneItemEmpreendimentoFila(
+    validacao.endereco,
+    {
+      tipo: validacao.tipo || el("tipo").value,
+      valor: el("valor").value,
+      modo_valor: state.valueMode
+    }
+  );
+  state.empreendimentosFila.push(itemFila);
   renderizarFilaEmpreendimentos();
   log(
-    `Empreendimento adicionado à fila: ${validacao.endereco.empreendimento} - ${formatarEnderecoResumo(validacao.endereco)}.`
+    `Empreendimento adicionado à fila: ${validacao.endereco.empreendimento} - ` +
+    `${itemFila.tipo_label} - ${formatarEnderecoResumo(validacao.endereco)}.`
   );
   limparCamposEndereco();
   setEmpreendimentoAberto(true);
@@ -1155,13 +1207,19 @@ function getTipoSolicitacaoLabel(tipo) {
 function coletarEnderecosParaExecucao() {
   const enderecoAtual = coletarEndereco();
   const enderecos = [];
+  const configuracaoAtual = configuracaoSolicitacaoAtual();
 
   for (let index = 0; index < state.empreendimentosFila.length; index += 1) {
-    const enderecoFila = cloneEnderecoParcial(state.empreendimentosFila[index]);
+    const itemFila = cloneItemEmpreendimentoFila(
+      state.empreendimentosFila[index],
+      configuracaoAtual
+    );
+    const enderecoFila = cloneEnderecoParcial(itemFila);
 
     if (!validarEnderecoAntesDoFluxo(enderecoFila)) {
       state.empreendimentosFila.splice(index, 1);
       preencherCamposEndereco(enderecoFila);
+      aplicarConfiguracaoSolicitacao(itemFila);
       renderizarFilaEmpreendimentos();
       setEmpreendimentoAberto(true);
       validarEnderecoAntesDoFluxo(enderecoFila);
@@ -1169,7 +1227,7 @@ function coletarEnderecosParaExecucao() {
       return null;
     }
 
-    enderecos.push(cloneEndereco(enderecoFila));
+    enderecos.push(cloneItemEmpreendimentoFila(enderecoFila, itemFila));
   }
 
   if (!enderecos.length || enderecoTemConteudo(enderecoAtual)) {
@@ -1177,7 +1235,7 @@ function coletarEnderecosParaExecucao() {
       return null;
     }
 
-    enderecos.push(cloneEndereco(enderecoAtual));
+    enderecos.push(cloneItemEmpreendimentoFila(enderecoAtual, configuracaoAtual));
   }
 
   if (!enderecos.length) {
@@ -1189,8 +1247,11 @@ function coletarEnderecosParaExecucao() {
 }
 
 function coletarEnderecosParciaisCliente() {
-  const enderecos = state.empreendimentosFila.map(cloneEnderecoParcial);
-  const atual = cloneEnderecoParcial(coletarEndereco());
+  const configuracaoAtual = configuracaoSolicitacaoAtual();
+  const enderecos = state.empreendimentosFila.map((item) => (
+    cloneItemEmpreendimentoFila(item, configuracaoAtual)
+  ));
+  const atual = cloneItemEmpreendimentoFila(coletarEndereco(), configuracaoAtual);
 
   if (enderecoTemConteudo(atual) || !enderecos.length) {
     enderecos.push(atual);
@@ -1203,7 +1264,14 @@ function resumoClienteFila(item = {}) {
   const enderecos = Array.isArray(item.enderecos) ? item.enderecos : [];
   const primeiro = enderecos[0] || {};
   const total = enderecos.length;
-  const tipoLabel = item.tipo_label || getTipoSolicitacaoLabel(item.tipo);
+  const tiposLabel = Array.from(new Set(
+    enderecos
+      .map((endereco) => getTipoSolicitacaoLabel(endereco.tipo || item.tipo))
+      .filter(Boolean)
+  ));
+  const tipoLabel = tiposLabel.join(" + ")
+    || item.tipo_label
+    || getTipoSolicitacaoLabel(item.tipo);
   const titulo = primeiro.empreendimento || (total > 1 ? `${total} empreendimentos` : "Sem empreendimento");
 
   return {
@@ -1229,15 +1297,16 @@ function montarClienteAtualParaFila() {
   }
 
   limparMensagensValidacao();
+  const primeiroItem = enderecos[0] || {};
 
   return {
     id: `fila_${Date.now()}_${base.docInfo.digitos.slice(-6)}`,
     doc: base.docInfo.digitos,
     doc_formatado: base.docInfo.formatado,
-    tipo: base.tipo,
-    tipo_label: getTipoSolicitacaoLabel(base.tipo),
-    valor: el("valor").value,
-    modo_valor: state.valueMode,
+    tipo: primeiroItem.tipo || base.tipo,
+    tipo_label: getTipoSolicitacaoLabel(primeiroItem.tipo || base.tipo),
+    valor: primeiroItem.valor || el("valor").value,
+    modo_valor: primeiroItem.modo_valor || state.valueMode,
     enderecos,
     status: "pronto",
     criado_em: new Date().toISOString()
@@ -1253,16 +1322,18 @@ function montarRascunhoClienteAtual() {
   }
 
   limparMensagemCampo("doc");
+  const enderecos = coletarEnderecosParciaisCliente();
+  const primeiroItem = enderecos[0] || configuracaoSolicitacaoAtual();
 
   return {
     id: state.rascunhoClienteEditando || "",
     doc: docInfo.digitos,
     doc_formatado: docInfo.formatado,
-    tipo: el("tipo").value,
-    tipo_label: getTipoSolicitacaoLabel(el("tipo").value),
-    valor: el("valor").value,
-    modo_valor: state.valueMode,
-    enderecos: coletarEnderecosParciaisCliente(),
+    tipo: primeiroItem.tipo || el("tipo").value,
+    tipo_label: getTipoSolicitacaoLabel(primeiroItem.tipo || el("tipo").value),
+    valor: primeiroItem.valor || el("valor").value,
+    modo_valor: primeiroItem.modo_valor || state.valueMode,
+    enderecos,
     status: "rascunho"
   };
 }
@@ -1282,7 +1353,8 @@ function chaveEnderecoFila(endereco = {}) {
     endereco.cep,
     endereco.bairro,
     endereco.cidade,
-    endereco.estado
+    endereco.estado,
+    endereco.tipo
   ].map(normalizarChaveFila).join("|");
 }
 
@@ -1372,7 +1444,10 @@ function removerPayloadConcluidoDaFilaClientes(payload = {}) {
 }
 
 function removerPayloadConcluidoDaFilaEmpreendimentos(payload = {}) {
-  const enderecoKey = chaveEnderecoFila(payload.endereco || {});
+  const enderecoKey = chaveEnderecoFila({
+    ...(payload.endereco || {}),
+    tipo: payload.tipo
+  });
   const index = state.empreendimentosFila.findIndex(
     (endereco) => chaveEnderecoFila(endereco) === enderecoKey
   );
@@ -1482,23 +1557,31 @@ function limparFilaClientes() {
 }
 
 function carregarClienteNoFormulario(item = {}, options = {}) {
+  const defaults = {
+    tipo: item.tipo,
+    valor: item.valor,
+    modo_valor: item.modo_valor
+  };
   const enderecos = Array.isArray(item.enderecos)
-    ? item.enderecos.map(cloneEnderecoParcial)
+    ? item.enderecos.map((endereco) => cloneItemEmpreendimentoFila(endereco, defaults))
     : [];
+  const primeiroItem = enderecos[0] || defaults;
 
   atualizarDocumentoUI(item.doc || "");
-  el("tipo").value = item.tipo || "";
-  state.valueMode = item.modo_valor || "auto";
+  el("tipo").value = primeiroItem.tipo || item.tipo || "";
+  state.valueMode = primeiroItem.modo_valor || item.modo_valor || "auto";
   atualizarModoValorUI();
   atualizarTipo();
 
-  if (item.valor) {
-    el("valor").value = item.valor;
+  if (primeiroItem.valor || item.valor) {
+    el("valor").value = primeiroItem.valor || item.valor;
   }
 
   if (enderecos.length) {
     preencherCamposEndereco(enderecos[0]);
-  state.empreendimentosFila = enderecos.slice(1).map(cloneEnderecoParcial);
+    state.empreendimentosFila = enderecos.slice(1).map((endereco) => (
+      cloneItemEmpreendimentoFila(endereco, defaults)
+    ));
   } else {
     limparCamposEndereco();
     state.empreendimentosFila = [];
@@ -2136,6 +2219,7 @@ function validarFormularioAntesDoFluxo() {
 
   return {
     docInfo: base.docInfo,
+    tipo: base.tipo,
     endereco
   };
 }
@@ -7068,18 +7152,28 @@ function montarPayloadsLoteAtual() {
 
   limparMensagensValidacao();
 
-  return enderecos.map((endereco, index) => ({
-    doc: base.docInfo.digitos,
-    tipo: el("tipo").value,
-    valor: el("valor").value,
-    modo_valor: state.valueMode,
-    endereco,
-    _batch: {
-      index: index + 1,
-      total: enderecos.length,
-      empreendimento: endereco.empreendimento
-    }
-  }));
+  return enderecos.map((item, index) => {
+    const configuracao = cloneItemEmpreendimentoFila(item, {
+      tipo: base.tipo,
+      valor: el("valor").value,
+      modo_valor: state.valueMode
+    });
+
+    return {
+      doc: base.docInfo.digitos,
+      tipo: configuracao.tipo,
+      valor: configuracao.valor,
+      modo_valor: configuracao.modo_valor,
+      endereco: cloneEndereco(configuracao),
+      _batch: {
+        index: index + 1,
+        total: enderecos.length,
+        empreendimento: configuracao.empreendimento,
+        tipo: configuracao.tipo,
+        tipo_label: configuracao.tipo_label
+      }
+    };
+  });
 }
 
 // Bloqueia botões enquanto o fluxo SAP está executando.
@@ -7214,9 +7308,26 @@ function montarCheckpointClienteParaProximo(payload, resultado) {
       nome_cliente: resultado?.resultado?.nome_cliente,
       documento: payload.doc,
       tipo_documento: payload.doc.length === 14 ? "CNPJ" : "CPF",
+      tipo: payload.tipo,
       valor: payload.valor
     }
   };
+}
+
+function checkpointClienteCompativel(payload, checkpoint) {
+  const contexto = checkpoint?.contexto || {};
+  const documentoPayload = limparDocumento(payload?.doc || "");
+  const documentoCheckpoint = limparDocumento(contexto.documento || "");
+  const tipoPayload = String(payload?.tipo || "").trim().toLowerCase();
+  const tipoCheckpoint = String(contexto.tipo || "").trim().toLowerCase();
+
+  return Boolean(
+    checkpoint?.resume_from
+    && documentoPayload
+    && documentoPayload === documentoCheckpoint
+    && tipoPayload
+    && tipoPayload === tipoCheckpoint
+  );
 }
 
 async function executarLoteEmpreendimentos(payloads) {
@@ -7231,7 +7342,9 @@ async function executarLoteEmpreendimentos(payloads) {
       const payload = payloads[index];
       const total = payloads.length;
       const nome = payload.endereco?.empreendimento || `Empreendimento ${index + 1}`;
-      const resume = Boolean(index > 0 && checkpointCliente);
+      const resume = Boolean(
+        index > 0 && checkpointClienteCompativel(payload, checkpointCliente)
+      );
       const resumoEndereco = formatarEnderecoResumo(payload.endereco || {});
 
       window.resetarProgresso();
@@ -7313,52 +7426,76 @@ function clienteFilaValido(cliente = {}) {
     return { ok: false, msg: "CPF/CNPJ incompleto na fila de clientes." };
   }
 
-  if (!cliente.tipo) {
-    return { ok: false, msg: `Tipo de solicitacao ausente para ${formatarDocumentoResumo(doc)}.` };
-  }
-
-  if (!cliente.valor || !limparValor(cliente.valor)) {
-    return { ok: false, msg: `Valor ausente para ${formatarDocumentoResumo(doc)}.` };
-  }
-
   if (!enderecos.length) {
     return { ok: false, msg: `Nenhum empreendimento informado para ${formatarDocumentoResumo(doc)}.` };
+  }
+
+  for (let index = 0; index < enderecos.length; index += 1) {
+    const item = cloneItemEmpreendimentoFila(enderecos[index], {
+      tipo: cliente.tipo,
+      valor: cliente.valor,
+      modo_valor: cliente.modo_valor
+    });
+
+    if (!item.tipo) {
+      return {
+        ok: false,
+        msg: `Tipo de solicitacao ausente no empreendimento ${index + 1} de ${formatarDocumentoResumo(doc)}.`
+      };
+    }
+
+    if (!item.valor || !limparValor(item.valor)) {
+      return {
+        ok: false,
+        msg: `Valor ausente no empreendimento ${index + 1} de ${formatarDocumentoResumo(doc)}.`
+      };
+    }
   }
 
   return { ok: true };
 }
 
 function montarPayloadsClienteFila(cliente = {}, clienteIndex = 0, totalClientes = 1) {
-  const enderecos = Array.isArray(cliente.enderecos) ? cliente.enderecos.map(cloneEndereco) : [];
+  const itens = Array.isArray(cliente.enderecos) ? cliente.enderecos : [];
   const queueId = garantirIdClienteFila(cliente);
 
-  return enderecos.map((endereco, index) => ({
-    doc: limparDocumento(cliente.doc || ""),
-    tipo: cliente.tipo,
-    valor: cliente.valor,
-    modo_valor: cliente.modo_valor || "auto",
-    endereco,
-    _batch: {
-      index: index + 1,
-      total: enderecos.length,
-      empreendimento: endereco.empreendimento
-    },
-    _clientBatch: {
-      index: clienteIndex + 1,
-      total: totalClientes,
-      doc_formatado: cliente.doc_formatado || formatarDocumentoResumo(cliente.doc),
-      tipo_label: cliente.tipo_label || getTipoSolicitacaoLabel(cliente.tipo)
-    },
-    _queue_context: {
-      source: "clientes_fila",
-      queueId,
-      enderecoKey: chaveEnderecoFila(endereco),
-      clienteIndex,
-      payloadIndex: index,
-      totalClientes,
-      totalPayloadsCliente: enderecos.length
-    }
-  }));
+  return itens.map((item, index) => {
+    const configuracao = cloneItemEmpreendimentoFila(item, {
+      tipo: cliente.tipo,
+      valor: cliente.valor,
+      modo_valor: cliente.modo_valor
+    });
+
+    return {
+      doc: limparDocumento(cliente.doc || ""),
+      tipo: configuracao.tipo,
+      valor: configuracao.valor,
+      modo_valor: configuracao.modo_valor,
+      endereco: cloneEndereco(configuracao),
+      _batch: {
+        index: index + 1,
+        total: itens.length,
+        empreendimento: configuracao.empreendimento,
+        tipo: configuracao.tipo,
+        tipo_label: configuracao.tipo_label
+      },
+      _clientBatch: {
+        index: clienteIndex + 1,
+        total: totalClientes,
+        doc_formatado: cliente.doc_formatado || formatarDocumentoResumo(cliente.doc),
+        tipo_label: configuracao.tipo_label
+      },
+      _queue_context: {
+        source: "clientes_fila",
+        queueId,
+        enderecoKey: chaveEnderecoFila(configuracao),
+        clienteIndex,
+        payloadIndex: index,
+        totalClientes,
+        totalPayloadsCliente: itens.length
+      }
+    };
+  });
 }
 
 function obterProximoItemFilaClientes(planos, clienteIndex, payloadIndex) {
@@ -7454,7 +7591,9 @@ async function executarFilaClientes(clientes, options = {}) {
       for (let payloadIndex = payloadInicial; payloadIndex < plano.payloads.length; payloadIndex += 1) {
         const payload = plano.payloads[payloadIndex];
         const nome = payload.endereco?.empreendimento || `Empreendimento ${payloadIndex + 1}`;
-        const resume = Boolean(payloadIndex > 0 && checkpointCliente);
+        const resume = Boolean(
+          payloadIndex > 0 && checkpointClienteCompativel(payload, checkpointCliente)
+        );
         const resumoEndereco = formatarEnderecoResumo(payload.endereco || {});
         const posicao = boletosConcluidos + 1;
 

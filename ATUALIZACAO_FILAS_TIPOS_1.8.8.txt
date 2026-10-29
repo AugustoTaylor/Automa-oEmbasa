@@ -1,0 +1,12 @@
+ATUALIZAÇÃO 1.8.8 - TIPOS INDEPENDENTES NAS FILAS
+
+Cada empreendimento e cada CNPJ da fila mantém seu próprio tipo de solicitação,
+valor e modo de valor. A geração não reutiliza mais o tipo do primeiro item.
+
+Quando dois empreendimentos do mesmo CNPJ possuem o mesmo tipo, o cliente já
+validado pode ser reaproveitado. Se o tipo mudar, a XD03 é executada novamente
+para validar o setor correspondente antes de continuar o boleto.
+
+A fila agora também exibe o tipo salvo ao lado de cada empreendimento.
+
+Validação em SAP real: necessária no computador da empresa.

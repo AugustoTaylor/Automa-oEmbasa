@@ -1,3 +1,12 @@
+## Quarta-feira, 28/10/2026 - Versão 1.8.8 (tipos independentes nas filas)
+
+- Cada empreendimento adicionado à fila passa a registrar uma fotografia própria do tipo de solicitação, valor e modo de valor no momento da inclusão.
+- A fila de um mesmo CNPJ pode combinar, por exemplo, um empreendimento de Viabilidade e outro de Projeto Água sem repetir o primeiro tipo nos boletos seguintes.
+- CNPJs diferentes continuam gerando payloads independentes; o tipo exibido e enviado ao backend agora vem obrigatoriamente do item atual da fila.
+- O reaproveitamento do cliente já validado só ocorre quando o próximo empreendimento possui o mesmo documento e o mesmo tipo. Quando o tipo muda, a XD03 é executada novamente para validar o setor correto.
+- A lista visual de empreendimentos mostra o tipo salvo em cada item, e as chaves internas da fila distinguem o mesmo endereço quando usado com tipos diferentes.
+- Adicionado teste de interface simulando CNPJs e empreendimentos de tipos diferentes, incluindo as chamadas enviadas ao fluxo backend.
+
 ## Quarta-feira, 28/10/2026 - Versão 1.8.7 (troca segura de Esgoto para Água)
 
 - No fluxo combinado Água + Esgoto, a SP02 agora é reaberta obrigatoriamente depois que o usuário conclui o PDF de Esgoto e clica em **Prosseguir para Água**.
