@@ -1,3 +1,13 @@
+## Quinta-feira, 29/10/2026 - Versão 1.8.9 (Fale Conosco automático)
+
+- O destinatário do **Fale Conosco** foi alterado e fixado no backend como `faft@embasa.ba.gov.br`; uma alteração no JSON ou na interface não consegue redirecionar os pedidos.
+- O envio padrão deixou de depender do Outlook instalado ou aberto e passou a usar SMTP direto com TLS pelo servidor de entrada corporativo da EMBASA.
+- O remetente técnico `automacao-api@embasa.ba.gov.br` identifica que a mensagem foi gerada pelo sistema e os cabeçalhos evitam respostas automáticas em cadeia.
+- O modo padrão não solicita conta, senha nem cliente de e-mail ao usuário. Eventual autenticação futura usa somente variável de ambiente, sem senha gravada no executável ou em `embasa_settings.json`.
+- A janela agora informa claramente o destino e que o envio é automático.
+- Mantidos validação dos campos, anexos JPG/PNG de até 15 MB, protocolo e snapshot local para rastreio.
+- Validação local: 43 testes Python e 4 testes Node aprovados, além de conexão SMTP com STARTTLS e aceite do remetente/destinatário até a etapa anterior à transmissão da mensagem. Nenhum e-mail real foi enviado durante o teste.
+
 ## Quarta-feira, 28/10/2026 - Versão 1.8.8 (tipos independentes nas filas)
 
 - Cada empreendimento adicionado à fila passa a registrar uma fotografia própria do tipo de solicitação, valor e modo de valor no momento da inclusão.

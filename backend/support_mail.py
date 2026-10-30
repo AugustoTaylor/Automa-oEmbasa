@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 import smtplib
 import ssl
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
 from backend.settings import get_runtime_root, get_setting
@@ -18,6 +19,7 @@ from backend.settings import get_runtime_root, get_setting
 MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 SUPPORTED_ATTACHMENT_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 SUPPORTED_ATTACHMENT_MIME_TYPES = {"image/jpeg", "image/png"}
+SUPPORT_DESTINATION_EMAIL = "faft@embasa.ba.gov.br"
 
 
 # Representa um anexo validado vindo da interface em base64.
@@ -174,6 +176,10 @@ def _build_email_message(
     message["Subject"] = subject
     message["From"] = formataddr((sender_name, sender_email))
     message["To"] = recipient_email
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = make_msgid(domain="embasa.ba.gov.br")
+    message["Auto-Submitted"] = "auto-generated"
+    message["X-Auto-Response-Suppress"] = "All"
     message.set_content(body)
     return message
 
@@ -242,12 +248,23 @@ def _save_support_snapshot(payload: dict, protocolo: str) -> str:
 # Envia o atendimento usando um servidor SMTP configurado explicitamente.
 def _send_support_email_smtp(payload: dict, protocolo: str, config: dict) -> dict:
     smtp_host = str(config.get("smtp_host") or "").strip()
-    smtp_port = int(config.get("smtp_port") or 587)
+    try:
+        smtp_port = int(config.get("smtp_port") or 25)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("A porta do servidor de atendimento está inválida.") from exc
+
     smtp_username = str(config.get("smtp_username") or "").strip()
-    smtp_password = str(config.get("smtp_password") or "").strip()
-    sender_email = str(config.get("smtp_from_email") or smtp_username).strip()
-    sender_name = str(config.get("smtp_from_name") or "EMBASA API").strip()
-    destination_email = str(config.get("destination_email") or "").strip()
+    password_env_name = str(
+        config.get("smtp_password_env") or "EMBASA_SUPPORT_SMTP_PASSWORD"
+    ).strip()
+    smtp_password = os.environ.get(password_env_name, "") if smtp_username else ""
+    sender_email = str(
+        config.get("smtp_from_email") or "automacao-api@embasa.ba.gov.br"
+    ).strip()
+    sender_name = str(
+        config.get("smtp_from_name") or "EMBASA - Fale Conosco"
+    ).strip()
+    destination_email = SUPPORT_DESTINATION_EMAIL
     subject_prefix = str(config.get("subject_prefix") or "[EMBASA Atendimento]").strip()
     smtp_use_tls = _setting_bool(config.get("smtp_use_tls"), default=True)
 
@@ -257,7 +274,6 @@ def _send_support_email_smtp(payload: dict, protocolo: str, config: dict) -> dic
             ("smtp_host", smtp_host),
             ("smtp_port", smtp_port),
             ("smtp_from_email", sender_email),
-            ("destination_email", destination_email),
         )
         if not value
     ]
@@ -265,6 +281,12 @@ def _send_support_email_smtp(payload: dict, protocolo: str, config: dict) -> dic
     if missing:
         raise ValueError(
             "Configuração de e-mail incompleta. Ajuste: " + ", ".join(missing)
+        )
+
+    if smtp_username and not smtp_password:
+        raise ValueError(
+            "A credencial do servidor de atendimento não foi encontrada na variável "
+            f"de ambiente {password_env_name}."
         )
 
     support_subject = f"{subject_prefix} {protocolo}"
@@ -278,17 +300,23 @@ def _send_support_email_smtp(payload: dict, protocolo: str, config: dict) -> dic
     )
     _attach_files(support_message, payload["attachments"])
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as smtp:
-        smtp.ehlo()
-
-        if smtp_use_tls:
-            smtp.starttls(context=ssl.create_default_context())
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as smtp:
             smtp.ehlo()
 
-        if smtp_username:
-            smtp.login(smtp_username, smtp_password)
+            if smtp_use_tls:
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.ehlo()
 
-        smtp.send_message(support_message)
+            if smtp_username:
+                smtp.login(smtp_username, smtp_password)
+
+            smtp.send_message(support_message)
+    except (OSError, smtplib.SMTPException) as exc:
+        raise ValueError(
+            "Não foi possível enviar o atendimento automaticamente. Verifique a "
+            "conexão com a rede da EMBASA e tente novamente."
+        ) from exc
 
     return {
         "destination_email": destination_email,
@@ -298,11 +326,8 @@ def _send_support_email_smtp(payload: dict, protocolo: str, config: dict) -> dic
 
 # Envia o atendimento pelo perfil já autenticado no Outlook clássico do Windows.
 def _send_support_email_outlook(payload: dict, protocolo: str, config: dict) -> dict:
-    destination_email = str(config.get("destination_email") or "").strip()
+    destination_email = SUPPORT_DESTINATION_EMAIL
     subject_prefix = str(config.get("subject_prefix") or "[EMBASA Atendimento]").strip()
-
-    if not destination_email:
-        raise ValueError("Configuração de e-mail incompleta. Ajuste: destination_email")
 
     support_subject = f"{subject_prefix} {protocolo}"
     support_body = _build_support_body(payload, protocolo)
@@ -355,16 +380,17 @@ def send_support_emails(payload: dict, protocolo: str) -> dict:
     if not _setting_bool(config.get("notification_email_enabled"), default=False):
         raise ValueError("O envio por e-mail ainda não está configurado no sistema.")
 
-    delivery_mode = str(config.get("delivery_mode") or "outlook_desktop").strip().lower()
+    delivery_mode = str(config.get("delivery_mode") or "smtp_direct").strip().lower()
 
     if delivery_mode == "outlook_desktop":
         return _send_support_email_outlook(payload, protocolo, config)
 
-    if delivery_mode == "smtp":
+    if delivery_mode in {"smtp", "smtp_direct", "smtp_relay"}:
         return _send_support_email_smtp(payload, protocolo, config)
 
     raise ValueError(
-        "Modo de envio de atendimento inválido. Use outlook_desktop ou smtp."
+        "Modo de envio de atendimento inválido. Use smtp_direct, smtp_relay ou "
+        "outlook_desktop."
     )
 
 

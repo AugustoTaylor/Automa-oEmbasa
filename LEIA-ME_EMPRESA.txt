@@ -1,6 +1,6 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.8
-Atualizado em: 28/10/2026
+Versão: 1.8.9
+Atualizado em: 29/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
 O atalho do usuário deve apontar para:
@@ -50,7 +50,16 @@ Nas utilizações seguintes, o sistema faz o check-in na base compartilhada. Se 
 
 Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.
 
-5. TEMPO DE DEMONSTRAÇÃO DAS AÇÕES
+5. FALE CONOSCO
+O formulário envia os pedidos automaticamente para faft@embasa.ba.gov.br.
+O usuário não precisa ter Outlook aberto nem uma conta de e-mail configurada no computador.
+
+O envio padrão usa uma conexão TLS direta com o servidor de entrada corporativo, pela porta 25. O destinatário é fixo no backend e não pode ser alterado pela interface nem pelo arquivo embasa_settings.json.
+Não grave senha de e-mail no arquivo de configuração. O modo padrão não usa usuário nem senha.
+
+Se a infraestrutura de e-mail da EMBASA mudar, a equipe de TI deve atualizar somente os campos smtp_host, smtp_port e smtp_use_tls da seção support em embasa_settings.json.
+
+6. TEMPO DE DEMONSTRAÇÃO DAS AÇÕES
 No arquivo embasa_settings.json existe a seção:
 
 "timing": {
@@ -65,7 +74,7 @@ Uso:
 Depois de alterar esse valor, feche e abra o sistema novamente.
 Não use esse atraso em produção normal, apenas para teste, apresentação ou acompanhamento visual.
 
-6. COMO GERAR UMA NOVA VERSÃO
+7. COMO GERAR UMA NOVA VERSÃO
 No computador de manutenção, dentro da pasta do código-fonte, rode:
 
 powershell -ExecutionPolicy Bypass -File .\build_empresarial.ps1
@@ -73,7 +82,7 @@ powershell -ExecutionPolicy Bypass -File .\build_empresarial.ps1
 Esse comando recria a .venv local, instala as dependências e gera:
 dist\EmbasaPedidosSAP
 
-7. COMO PUBLICAR NA REDE
+8. COMO PUBLICAR NA REDE
 Depois do build, rode:
 
 powershell -ExecutionPolicy Bypass -File .\publicar_rede.ps1
@@ -85,7 +94,7 @@ Se precisar publicar em outro local, informe o destino manualmente:
 
 powershell -ExecutionPolicy Bypass -File .\publicar_rede.ps1 -DestinoRede "CAMINHO_DA_REDE"
 
-8. SOBRE EXECUTAR PELA REDE
+9. SOBRE EXECUTAR PELA REDE
 Quando aberto pela unidade N:, o sistema copia automaticamente a pasta do aplicativo para:
 %LOCALAPPDATA%\EMBASA\Runtime
 
@@ -95,7 +104,7 @@ Na primeira abertura após uma atualização pode demorar alguns segundos a mais
 
 Mesmo rodando pela cópia local, o cache compartilhado continua apontando para a pasta original da rede.
 
-9. SE DER ERRO ANTES DA INTERFACE ABRIR
+10. SE DER ERRO ANTES DA INTERFACE ABRIR
 Verifique o log:
 %TEMP%\EMBASA\startup.log
 
@@ -106,7 +115,7 @@ Erros comuns:
 - Microsoft Edge WebView2 Runtime ausente.
 - .NET Desktop Runtime ausente.
 
-10. TESTE RÁPIDO APÓS PUBLICAR
+11. TESTE RÁPIDO APÓS PUBLICAR
 - Abrir o SAP e fazer login.
 - Abrir o atalho do EmbasaPedidosSAP.exe pela rede.
 - Cadastrar uma matrícula de teste ou entrar com usuário existente.
@@ -116,6 +125,6 @@ Erros comuns:
 - Repetir o mesmo CPF/CNPJ para confirmar que o cliente foi recuperado do cache.
 - Verificar se o progresso em tempo real, cancelamento e logs aparecem corretamente.
 
-11. OBSERVAÇÃO
+12. OBSERVAÇÃO
 Não é necessário instalar Python, VS Code ou Git nos computadores dos usuários finais.
 Python só é necessário no computador de manutenção para gerar novo build.

@@ -10,7 +10,7 @@ from pathlib import Path
 DEFAULT_SETTINGS = {
     "app": {
         "name": "EMBASA",
-        "version": "1.8.8",
+        "version": "1.8.9",
         "company_code": "EMBA",
     },
     "security": {
@@ -63,16 +63,15 @@ DEFAULT_SETTINGS = {
     },
     "support": {
         "notification_email_enabled": True,
-        "delivery_mode": "outlook_desktop",
-        "destination_email": "augusto.cruz@embasa.ba.gov.br",
-        "smtp_host": "",
-        "smtp_port": 587,
+        "delivery_mode": "smtp_direct",
+        "smtp_host": "embasa.in.tmes.trendmicro.com",
+        "smtp_port": 25,
         "smtp_use_tls": True,
         "smtp_username": "",
-        "smtp_password": "",
-        "smtp_from_email": "",
-        "smtp_from_name": "EMBASA API",
-        "subject_prefix": "[EMBASA Atendimento]",
+        "smtp_password_env": "EMBASA_SUPPORT_SMTP_PASSWORD",
+        "smtp_from_email": "automacao-api@embasa.ba.gov.br",
+        "smtp_from_name": "EMBASA - Fale Conosco",
+        "subject_prefix": "[EMBASA - Fale Conosco]",
     },
 }
 

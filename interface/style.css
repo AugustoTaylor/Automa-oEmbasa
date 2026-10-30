@@ -2738,6 +2738,20 @@ input.is-loading {
   min-height: 170px;
 }
 
+.contact-delivery-note {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 143, 208, 0.22);
+  border-radius: 16px;
+  color: var(--muted);
+  background: rgba(0, 143, 208, 0.08);
+  line-height: 1.5;
+}
+
+.contact-delivery-note strong {
+  color: var(--ink);
+}
+
 .file-input-hidden {
   position: absolute;
   width: 1px;

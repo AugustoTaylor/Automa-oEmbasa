@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.8";
+const APP_VERSION = "1.8.9";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",

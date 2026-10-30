@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "EMBASA",
-    "version": "1.8.8",
+    "version": "1.8.9",
     "company_code": "EMBA"
   },
   "startup": {
@@ -54,7 +54,14 @@
   },
   "support": {
     "notification_email_enabled": true,
-    "delivery_mode": "outlook_desktop",
-    "destination_email": "augusto.cruz@embasa.ba.gov.br"
+    "delivery_mode": "smtp_direct",
+    "smtp_host": "embasa.in.tmes.trendmicro.com",
+    "smtp_port": 25,
+    "smtp_use_tls": true,
+    "smtp_username": "",
+    "smtp_password_env": "EMBASA_SUPPORT_SMTP_PASSWORD",
+    "smtp_from_email": "automacao-api@embasa.ba.gov.br",
+    "smtp_from_name": "EMBASA - Fale Conosco",
+    "subject_prefix": "[EMBASA - Fale Conosco]"
   }
 }

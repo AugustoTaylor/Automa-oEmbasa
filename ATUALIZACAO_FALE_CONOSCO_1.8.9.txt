@@ -1,0 +1,16 @@
+ATUALIZAÇÃO 1.8.9 - FALE CONOSCO AUTOMÁTICO
+
+O formulário Fale Conosco agora envia diretamente para:
+faft@embasa.ba.gov.br
+
+O usuário não precisa abrir o Outlook nem possuir uma conta de e-mail configurada no computador.
+O destino é fixo no backend e o envio usa TLS com o servidor corporativo.
+
+Validações mantidas:
+- matrícula, nome, lotação, setor e descrição obrigatórios;
+- descrição limitada a 600 caracteres;
+- anexos JPG, JPEG ou PNG, com até 15 MB no total;
+- geração de protocolo e cópia local para rastreio.
+
+Observação técnica:
+o endereço do servidor corporativo permanece configurável em embasa_settings.json para permitir manutenção pela TI sem alterar o executável. O destinatário não é configurável.
