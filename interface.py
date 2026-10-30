@@ -189,6 +189,14 @@ class API:
     def set_window(self, window):
         self._window = window
 
+    def _matricula_usuario_atual(self):
+        matricula = str(
+            (self._usuario_autenticado or {}).get("matricula") or ""
+        ).strip().casefold()
+        if not matricula and not get_setting("auth", "enabled", default=True):
+            return "acesso-livre"
+        return matricula
+
     def verificar_login_lembrado(self, versao_app=""):
         if not get_setting("auth", "enabled", default=True):
             self._usuario_autenticado = {"matricula": "ACESSO-LIVRE"}
@@ -566,6 +574,7 @@ class API:
     def gerar_boleto(self, dados):
         resultado_final = {}
         concluido = threading.Event()
+        matricula_historico = self._matricula_usuario_atual()
 
         with self._flow_lock:
             if self._flow_running:
@@ -685,6 +694,7 @@ class API:
                     dados_tratados,
                     dados_resultado,
                     logger=self._logger,
+                    matricula_usuario=matricula_historico,
                 )
 
                 if registro_historico:
@@ -832,6 +842,7 @@ class API:
     def gerar_boleto_multa_contratual(self, dados):
         resultado_final = {}
         concluido = threading.Event()
+        matricula_historico = self._matricula_usuario_atual()
 
         with self._flow_lock:
             if self._flow_running:
@@ -968,6 +979,7 @@ class API:
                     dados_tratados,
                     dados_resultado,
                     logger=self._logger,
+                    matricula_usuario=matricula_historico,
                 )
 
                 if registro_historico:
@@ -1222,6 +1234,7 @@ class API:
     def executar_saldo_contas_sap(self, dados):
         resultado_final = {}
         concluido = threading.Event()
+        matricula_historico = self._matricula_usuario_atual()
 
         with self._flow_lock:
             if self._flow_running:
@@ -1447,6 +1460,7 @@ class API:
                 registro_historico = registrar_historico_saldo_contas(
                     dados_historico,
                     logger=self._logger,
+                    matricula_usuario=matricula_historico,
                 )
                 self._emitir_status("Relatorio de saldos concluido", "success")
 
@@ -1826,7 +1840,7 @@ class API:
                 "app": SETTINGS.get("app", {}),
                 "runtime": SETTINGS.get("_meta", {}),
                 "cache": cache_cliente.stats(),
-                "history": diagnostico_historico(),
+                "history": diagnostico_historico(self._matricula_usuario_atual()),
                 "drafts": diagnostico_rascunhos(),
                 "log_file": self._logger.log_file_path,
             }
@@ -1839,7 +1853,11 @@ class API:
             return _serializar_para_front(
                 {
                     "ok": True,
-                    "itens": listar_historico_pedidos(filtro=filtro, limite=limite),
+                    "itens": listar_historico_pedidos(
+                        filtro=filtro,
+                        limite=limite,
+                        matricula_usuario=self._matricula_usuario_atual(),
+                    ),
                 }
             )
         except Exception as exc:
@@ -1853,7 +1871,10 @@ class API:
     @_requer_autenticacao
     def obter_historico(self, registro_id):
         try:
-            registro = obter_historico_pedido(registro_id)
+            registro = obter_historico_pedido(
+                registro_id,
+                matricula_usuario=self._matricula_usuario_atual(),
+            )
         except Exception as exc:
             return {
                 "ok": False,

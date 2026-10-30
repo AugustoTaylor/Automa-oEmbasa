@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import hashlib
 import json
 import os
 import re
@@ -87,9 +88,29 @@ def _history_root() -> Path:
         raise
 
 
-def _db_path() -> Path:
-    file_name = get_setting("history", "db_file", default="historico_pedidos.json")
-    return _history_root() / str(file_name or "historico_pedidos.json")
+def _normalizar_matricula_usuario(valor: Any) -> str:
+    return _texto(valor).casefold()
+
+
+def _nome_arquivo_banco() -> str:
+    configurado = get_setting("history", "db_file", default="historico_pedidos.json")
+    return Path(str(configurado or "historico_pedidos.json")).name
+
+
+def _pasta_usuario(matricula_usuario: Any) -> Path:
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+
+    if not matricula:
+        raise ValueError("A matricula do usuario e obrigatoria para separar o historico.")
+
+    identificador = hashlib.sha256(matricula.encode("utf-8")).hexdigest()[:10]
+    return _history_root() / "usuarios" / f"{_slug(matricula, 'usuario')}_{identificador}"
+
+
+def _db_path(matricula_usuario: Any = "") -> Path:
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    base = _pasta_usuario(matricula) if matricula else _history_root()
+    return base / _nome_arquivo_banco()
 
 
 @contextmanager
@@ -126,9 +147,7 @@ def _file_lock(path: Path):
             pass
 
 
-def _ler_banco() -> list[dict[str, Any]]:
-    path = _db_path()
-
+def _ler_arquivo_banco(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
 
@@ -144,13 +163,60 @@ def _ler_banco() -> list[dict[str, Any]]:
     return payload if isinstance(payload, list) else []
 
 
-def _salvar_banco(registros: list[dict[str, Any]]) -> None:
-    path = _db_path()
+def _unir_registros(*colecoes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unicos = []
+    chaves = set()
+
+    for colecao in colecoes:
+        for registro in colecao:
+            if not isinstance(registro, dict):
+                continue
+            chave = (
+                _normalizar_matricula_usuario(registro.get("matricula_usuario")),
+                _texto(registro.get("id")),
+            )
+            if chave[1] and chave in chaves:
+                continue
+            if chave[1]:
+                chaves.add(chave)
+            unicos.append(registro)
+
+    return unicos
+
+
+def _ler_banco(matricula_usuario: Any = "") -> list[dict[str, Any]]:
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    legado = _ler_arquivo_banco(_db_path())
+
+    if matricula:
+        registros_usuario = _ler_arquivo_banco(_db_path(matricula))
+        legado_vinculado = [
+            registro
+            for registro in legado
+            if _normalizar_matricula_usuario(registro.get("matricula_usuario")) == matricula
+        ]
+        return _unir_registros(registros_usuario, legado_vinculado)
+
+    colecoes = [legado]
+    raiz_usuarios = _history_root() / "usuarios"
+    if raiz_usuarios.exists():
+        for caminho in raiz_usuarios.glob(f"*/{_nome_arquivo_banco()}"):
+            colecoes.append(_ler_arquivo_banco(caminho))
+    return _unir_registros(*colecoes)
+
+
+def _salvar_banco(
+    registros: list[dict[str, Any]],
+    matricula_usuario: Any = "",
+) -> None:
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    path = _db_path(matricula)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     payload = {
-        "schema": 1,
+        "schema": 2 if matricula else 1,
         "atualizado_em": _agora().isoformat(timespec="seconds"),
+        "matricula_usuario": matricula,
         "registros": registros,
     }
     tmp_path.write_text(
@@ -300,7 +366,11 @@ def _numero_bol(resultado: dict[str, Any]) -> str:
     return _texto_bol(resultado.get("boleto"))
 
 
-def _montar_registro(dados: dict[str, Any], resultado: dict[str, Any]) -> dict[str, Any]:
+def _montar_registro(
+    dados: dict[str, Any],
+    resultado: dict[str, Any],
+    matricula_usuario: Any = "",
+) -> dict[str, Any]:
     agora = _agora()
     documento = limpar_doc(dados.get("doc") or resultado.get("documento") or "")
     doc_info = _tipo_documento_info(documento)
@@ -321,7 +391,8 @@ def _montar_registro(dados: dict[str, Any], resultado: dict[str, Any]) -> dict[s
         "Não informado",
     )
     tipo = _texto(dados.get("tipo") or resultado.get("tipo")).lower()
-    usuario = _texto(getpass.getuser(), "usuario")
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    usuario_windows = _texto(getpass.getuser(), "usuario")
     texto_padrao = montar_texto_padrao(dados, resultado)
     numero_bol = _numero_bol(resultado)
     registro_id = f"{agora.strftime('%Y%m%d%H%M%S')}_{_slug(numero_pedido, 'pedido')}"
@@ -331,7 +402,9 @@ def _montar_registro(dados: dict[str, Any], resultado: dict[str, Any]) -> dict[s
         "data": agora.strftime("%Y-%m-%d"),
         "hora": agora.strftime("%H:%M:%S"),
         "data_hora": agora.isoformat(timespec="seconds"),
-        "usuario": usuario,
+        "usuario": matricula or usuario_windows,
+        "matricula_usuario": matricula,
+        "usuario_windows": usuario_windows,
         "nome_cliente": nome_cliente,
         "documento": documento,
         "documento_formatado": formatar_doc(documento),
@@ -355,8 +428,13 @@ def _montar_registro(dados: dict[str, Any], resultado: dict[str, Any]) -> dict[s
     }
 
 
-def _montar_registro_saldo_contas(resultado: dict[str, Any]) -> dict[str, Any]:
+def _montar_registro_saldo_contas(
+    resultado: dict[str, Any],
+    matricula_usuario: Any = "",
+) -> dict[str, Any]:
     agora = _agora()
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    usuario_windows = _texto(getpass.getuser(), "usuario")
     mes = str(resultado.get("mes") or "").zfill(2)
     ano = str(resultado.get("ano") or "")
     periodo = f"{mes}/{ano}" if mes and ano else "Período não informado"
@@ -404,7 +482,9 @@ def _montar_registro_saldo_contas(resultado: dict[str, Any]) -> dict[str, Any]:
         "data": agora.strftime("%Y-%m-%d"),
         "hora": agora.strftime("%H:%M:%S"),
         "data_hora": agora.isoformat(timespec="seconds"),
-        "usuario": _texto(getpass.getuser(), "usuario"),
+        "usuario": matricula or usuario_windows,
+        "matricula_usuario": matricula,
+        "usuario_windows": usuario_windows,
         "periodo": periodo,
         "mes": mes,
         "ano": ano,
@@ -435,7 +515,8 @@ def _conteudo_txt(registro: dict[str, Any]) -> str:
             "HISTÓRICO DE SALDO DE CONTAS - EMBASA",
             "=" * 44,
             f"Data/Hora: {registro.get('data_hora', '')}",
-            f"Usuário Windows: {registro.get('usuario', '')}",
+            f"Matrícula do sistema: {registro.get('matricula_usuario') or registro.get('usuario', '')}",
+            f"Usuário Windows: {registro.get('usuario_windows') or registro.get('usuario', '')}",
             f"Período: {registro.get('periodo', '')}",
             f"Data inicial SAP: em branco (histórico completo)",
             f"Data final SAP: {registro.get('data_final', '')}",
@@ -467,7 +548,8 @@ def _conteudo_txt(registro: dict[str, Any]) -> str:
         "HISTÓRICO DE PEDIDO SAP - EMBASA",
         "=" * 42,
         f"Data/Hora: {registro.get('data_hora', '')}",
-        f"Usuário Windows: {registro.get('usuario', '')}",
+        f"Matrícula do sistema: {registro.get('matricula_usuario') or registro.get('usuario', '')}",
+        f"Usuário Windows: {registro.get('usuario_windows') or registro.get('usuario', '')}",
         "",
         "CLIENTE",
         f"Nome: {registro.get('nome_cliente', '')}",
@@ -513,7 +595,10 @@ def _conteudo_txt(registro: dict[str, Any]) -> str:
 def _salvar_txt(registro: dict[str, Any]) -> Path:
     root = _history_root()
     data = _slug(registro.get("data"), "sem_data")
-    usuario = _slug(registro.get("usuario"), "usuario")
+    usuario = _slug(
+        registro.get("matricula_usuario") or registro.get("usuario"),
+        "usuario",
+    )
     cliente = _slug(registro.get("nome_cliente"), "cliente")
     pedido = _slug(registro.get("numero_pedido"), "pedido")
     pasta = root / "txt" / data / usuario / cliente
@@ -527,23 +612,26 @@ def registrar_historico_pedido(
     dados: dict[str, Any],
     resultado: dict[str, Any],
     logger=None,
+    matricula_usuario: Any = "",
 ) -> dict[str, Any] | None:
     if not get_setting("history", "enabled", default=True):
         return None
 
-    registro = _montar_registro(dados, resultado or {})
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    registro = _montar_registro(dados, resultado or {}, matricula)
 
     try:
         txt_path = _salvar_txt(registro)
         registro["txt_path"] = str(txt_path)
 
-        db_path = _db_path()
+        db_path = _db_path(matricula)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(db_path):
-            registros = _ler_banco()
+            registros = _ler_arquivo_banco(db_path)
             registros.append(registro)
             max_entries = int(get_setting("history", "max_entries", default=5000) or 5000)
             registros = registros[-max_entries:]
-            _salvar_banco(registros)
+            _salvar_banco(registros, matricula)
 
         if logger:
             logger.add(
@@ -566,20 +654,23 @@ def registrar_historico_pedido(
 def registrar_historico_saldo_contas(
     resultado: dict[str, Any],
     logger=None,
+    matricula_usuario: Any = "",
 ) -> dict[str, Any] | None:
     if not get_setting("history", "enabled", default=True):
         return None
 
-    registro = _montar_registro_saldo_contas(resultado or {})
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
+    registro = _montar_registro_saldo_contas(resultado or {}, matricula)
     try:
         txt_path = _salvar_txt(registro)
         registro["txt_path"] = str(txt_path)
-        db_path = _db_path()
+        db_path = _db_path(matricula)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(db_path):
-            registros = _ler_banco()
+            registros = _ler_arquivo_banco(db_path)
             registros.append(registro)
             max_entries = int(get_setting("history", "max_entries", default=5000) or 5000)
-            _salvar_banco(registros[-max_entries:])
+            _salvar_banco(registros[-max_entries:], matricula)
         if logger:
             logger.add(
                 -1,
@@ -602,6 +693,7 @@ def _registro_resumo(registro: dict[str, Any]) -> dict[str, Any]:
     if registro.get("tipo_registro") == "saldo_contas":
         return {
             "id": registro.get("id"),
+            "matricula_usuario": registro.get("matricula_usuario"),
             "tipo_registro": "saldo_contas",
             "data": registro.get("data"),
             "hora": registro.get("hora"),
@@ -613,6 +705,7 @@ def _registro_resumo(registro: dict[str, Any]) -> dict[str, Any]:
         }
     return {
         "id": registro.get("id"),
+        "matricula_usuario": registro.get("matricula_usuario"),
         "data": registro.get("data"),
         "hora": registro.get("hora"),
         "nome_cliente": registro.get("nome_cliente"),
@@ -628,10 +721,18 @@ def _registro_resumo(registro: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def listar_historico_pedidos(filtro: str = "", limite: int | None = None) -> list[dict[str, Any]]:
+def listar_historico_pedidos(
+    filtro: str = "",
+    limite: int | None = None,
+    matricula_usuario: Any = "",
+) -> list[dict[str, Any]]:
     filtro_norm = _texto(filtro).upper()
     limite = limite or int(get_setting("history", "max_results", default=200) or 200)
-    registros = sorted(_ler_banco(), key=lambda item: item.get("data_hora", ""), reverse=True)
+    registros = sorted(
+        _ler_banco(matricula_usuario),
+        key=lambda item: item.get("data_hora", ""),
+        reverse=True,
+    )
 
     if filtro_norm:
         registros = [
@@ -662,25 +763,30 @@ def listar_historico_pedidos(filtro: str = "", limite: int | None = None) -> lis
     return [_registro_resumo(registro) for registro in registros[:limite]]
 
 
-def obter_historico_pedido(registro_id: str) -> dict[str, Any] | None:
+def obter_historico_pedido(
+    registro_id: str,
+    matricula_usuario: Any = "",
+) -> dict[str, Any] | None:
     registro_id = _texto(registro_id)
 
     if not registro_id:
         return None
 
-    for registro in _ler_banco():
+    for registro in _ler_banco(matricula_usuario):
         if _texto(registro.get("id")) == registro_id:
             return registro
 
     return None
 
 
-def diagnostico_historico() -> dict[str, Any]:
+def diagnostico_historico(matricula_usuario: Any = "") -> dict[str, Any]:
+    matricula = _normalizar_matricula_usuario(matricula_usuario)
     root = _history_root()
-    db = _db_path()
+    db = _db_path(matricula)
     return {
         "enabled": bool(get_setting("history", "enabled", default=True)),
         "root": str(root),
         "db_file": str(db),
-        "total": len(_ler_banco()),
+        "matricula_usuario": matricula,
+        "total": len(_ler_banco(matricula)),
     }

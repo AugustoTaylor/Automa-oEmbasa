@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.11";
+const APP_VERSION = "1.8.12";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
@@ -403,6 +403,7 @@ async function concluirLogin(resultado) {
   if (!state.usuarioAutenticado) return;
   const matricula = state.usuarioAutenticado.matricula || "usuario";
   if (el("authUserLabel")) el("authUserLabel").textContent = `Matricula ${matricula} · Sair`;
+  if (el("historyUserScope")) el("historyUserScope").textContent = `Somente os registros da matricula ${matricula}`;
   bloquearInterfacePorLogin(false);
   mostrarAuthErro("");
   mostrarAuthSucesso("");
@@ -546,6 +547,8 @@ async function sairDoSistema() {
     state.saldoModelos = [];
     state.saldoModelosCarregados = false;
     state.rascunhosBackendSincronizado = false;
+    state.historicoItens = [];
+    state.historicoSelecionado = null;
     bloquearInterfacePorLogin(true);
     mostrarAuthPainel("login");
   }

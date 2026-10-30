@@ -1,5 +1,5 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.11
+Versão: 1.8.12
 Atualizado em: 30/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
@@ -53,7 +53,17 @@ Contas criadas em versões anteriores recebem sua primeira chave de recuperaçã
 
 Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.
 
-4.1. REAPROVEITAMENTO DO ÚLTIMO BOL
+4.1. HISTÓRICO SEPARADO POR USUÁRIO
+Todo novo histórico de boleto, multa contratual e saldo de contas é vinculado à matrícula que estava autenticada quando a operação começou.
+Cada matrícula possui seu próprio banco dentro de:
+dados_compartilhados\historico\usuarios\<identificador_do_usuario>\historico_pedidos.json
+
+Ao abrir o Histórico, a API usa a sessão autenticada e retorna somente os registros daquela matrícula. A mesma verificação é repetida ao abrir o detalhe por ID, impedindo que um usuário consulte o registro de outro.
+Os arquivos TXT também registram a matrícula do sistema e o usuário do Windows que executou a ação.
+
+O histórico global criado pelas versões anteriores é preservado como legado, mas não é atribuído automaticamente a nenhuma matrícula porque não existe informação segura para identificar seu dono. Ele permanece disponível somente para rotinas internas de continuidade, como a inicialização da memória do BOL, e não aparece no painel pessoal dos usuários.
+
+4.2. REAPROVEITAMENTO DO ÚLTIMO BOL
 O sistema guarda por data de execução o último BOL usado no arquivo compartilhado:
 dados_compartilhados\f110\ultimo_bol.json
 

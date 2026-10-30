@@ -1,0 +1,18 @@
+EMBASA PEDIDOS SAP - ATUALIZACAO 1.8.12
+Data: 30/10/2026
+
+HISTORICO POR USUARIO
+- O histórico agora é vinculado à matrícula autenticada.
+- Cada usuário visualiza somente os próprios pedidos, multas e relatórios de saldo de contas.
+- Conhecer o ID de um registro não permite abri-lo por outra matrícula.
+- A janela de histórico mostra qual matrícula está sendo consultada.
+
+ARMAZENAMENTO
+- Cada matrícula possui um banco separado dentro de dados_compartilhados\historico\usuarios.
+- Os arquivos TXT identificam a matrícula do sistema e o usuário do Windows.
+- O limite de registros passa a ser aplicado separadamente para cada usuário.
+
+REGISTROS ANTIGOS
+- O histórico global das versões anteriores não é apagado.
+- Como os registros antigos não possuem matrícula confiável, eles não são atribuídos automaticamente a nenhum usuário.
+- O histórico antigo continua disponível somente para rotinas internas que precisam manter a continuidade do BOL.

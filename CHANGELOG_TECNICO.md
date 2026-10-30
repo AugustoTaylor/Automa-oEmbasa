@@ -1,3 +1,15 @@
+## Sexta-feira, 30/10/2026 - Versão 1.8.12 (histórico separado por usuário)
+
+- Todo novo histórico de pedido, multa contratual ou saldo de contas passa a guardar a matrícula autenticada e o usuário do Windows que executou a operação.
+- Cada matrícula recebe um banco físico separado em `dados_compartilhados/historico/usuarios/<identificador>/historico_pedidos.json`, com limite de registros independente.
+- A listagem do painel usa obrigatoriamente a matrícula da sessão atual e não aceita matrícula enviada pelo frontend.
+- A abertura do detalhe repete a verificação de propriedade, impedindo acesso cruzado mesmo que outro usuário conheça o ID do registro.
+- A matrícula é capturada no início de operações longas para evitar associação incorreta caso a sessão mude antes da gravação.
+- O cabeçalho da janela de histórico informa qual matrícula está sendo exibida, e o estado anterior é limpo ao sair do sistema.
+- O histórico global das versões anteriores é mantido como legado e não é atribuído automaticamente a usuários, evitando exposição ou associação incorreta de registros antigos.
+- A leitura global continua disponível apenas internamente para preservar a inicialização da memória compartilhada do BOL; ela não é exposta pela API do painel.
+- Validação local: 58 testes Python e 6 testes Node aprovados antes do build empresarial.
+
 ## Sexta-feira, 30/10/2026 - Versão 1.8.11 (recuperação de acesso e lembrar senha)
 
 - Adicionado o botão **Recuperar acesso** no painel de login, com matrícula, chave de recuperação, nova senha e confirmação.
