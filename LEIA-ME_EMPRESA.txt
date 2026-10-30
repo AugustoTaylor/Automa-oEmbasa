@@ -1,5 +1,5 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.9
+Versão: 1.8.10
 Atualizado em: 29/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
@@ -49,6 +49,16 @@ O cadastro não abre o sistema automaticamente: depois de criar o acesso, o func
 Nas utilizações seguintes, o sistema faz o check-in na base compartilhada. Se a pasta da rede estiver indisponível, o acesso é bloqueado em vez de criar um cadastro local paralelo.
 
 Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.
+
+4.1. REAPROVEITAMENTO DO ÚLTIMO BOL
+O sistema guarda por data de execução o último BOL usado no arquivo compartilhado:
+dados_compartilhados\f110\ultimo_bol.json
+
+Exemplo: se o último concluído foi BOL08, a próxima F110 começa verificando diretamente BOL09, sem consultar novamente BOL01 até BOL08. O candidato memorizado sempre é validado no SAP antes do preenchimento. Se outra execução já tiver ocupado BOL09, o sistema segue para BOL10.
+
+O arquivo também registra reservas temporárias para reduzir colisões entre computadores. Uma tentativa interrompida é validada novamente e pode ser reutilizada se continuar livre. A memória é separada por dia e o histórico compartilhado é usado para iniciar o arquivo quando já existem boletos concluídos.
+
+Não edite nem apague esse arquivo durante o expediente. Ele fica dentro de dados_compartilhados e é preservado pelo processo de atualização.
 
 5. FALE CONOSCO
 O formulário envia os pedidos automaticamente para faft@embasa.ba.gov.br.

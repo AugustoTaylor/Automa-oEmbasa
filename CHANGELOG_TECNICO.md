@@ -1,3 +1,14 @@
+## Quinta-feira, 29/10/2026 - Versão 1.8.10 (reaproveitamento do último BOL)
+
+- A F110 agora mantém memória compartilhada do último BOL utilizado em cada data de execução.
+- Depois de `BOL08`, a próxima confecção começa diretamente em `BOL09`, sem repetir as consultas de `BOL01` a `BOL08`.
+- O número sugerido continua sendo validado no SAP. Se estiver ocupado por uma execução externa, a busca avança para o próximo BOL livre.
+- Tentativas interrompidas são revalidadas: o número é reutilizado quando permaneceu livre e descartado quando o SAP confirma que foi ocupado.
+- O histórico existente é usado para iniciar a memória na primeira execução, inclusive em registros combinados de Água e Esgoto.
+- Reservas temporárias e lock de arquivo reduzem colisões entre usuários ou computadores executando a F110 ao mesmo tempo.
+- O estado fica em `dados_compartilhados/f110/ultimo_bol.json`, separado por dia e preservado nas atualizações.
+- Validação local: 51 testes Python e 4 testes Node aprovados. A seleção real do BOL no SAP deve ser confirmada no computador corporativo.
+
 ## Quinta-feira, 29/10/2026 - Versão 1.8.9 (Fale Conosco automático)
 
 - O destinatário do **Fale Conosco** foi alterado e fixado no backend como `faft@embasa.ba.gov.br`; uma alteração no JSON ou na interface não consegue redirecionar os pedidos.

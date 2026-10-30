@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "EMBASA",
-    "version": "1.8.9",
+    "version": "1.8.10",
     "company_code": "EMBA"
   },
   "startup": {
@@ -63,5 +63,12 @@
     "smtp_from_email": "automacao-api@embasa.ba.gov.br",
     "smtp_from_name": "EMBASA - Fale Conosco",
     "subject_prefix": "[EMBASA - Fale Conosco]"
+  },
+  "f110": {
+    "shared_dir": "dados_compartilhados/f110",
+    "bol_memory_file": "ultimo_bol.json",
+    "fallback_to_local": true,
+    "lock_timeout_seconds": 180,
+    "reservation_ttl_seconds": 600
   }
 }

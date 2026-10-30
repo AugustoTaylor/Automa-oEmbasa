@@ -10,7 +10,7 @@ from pathlib import Path
 DEFAULT_SETTINGS = {
     "app": {
         "name": "EMBASA",
-        "version": "1.8.9",
+        "version": "1.8.10",
         "company_code": "EMBA",
     },
     "security": {
@@ -56,6 +56,13 @@ DEFAULT_SETTINGS = {
     "saldo_contas": {
         "shared_dir": "dados_compartilhados/saldo_contas",
         "models_file": "modelos.json",
+    },
+    "f110": {
+        "shared_dir": "dados_compartilhados/f110",
+        "bol_memory_file": "ultimo_bol.json",
+        "fallback_to_local": True,
+        "lock_timeout_seconds": 180,
+        "reservation_ttl_seconds": 600,
     },
     "timing": {
         "action_delay_seconds": 0,

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+from backend.flows.f110_bol_cache import confirmar_identificacao, memoria_bol
 from backend.flows.f110_boleto import finalizar_boleto_f110
 from backend.utils.sap_waits import wait_for_element, wait_until_ready
 
@@ -137,12 +138,15 @@ def ultimo_dia_mes():
     return ultimo_atual.strftime("%d%m%Y")
 
 
-def gerar_identificacao(session, data_exec):
+def gerar_identificacao(session, data_exec, logger=None):
     """
-    Encontra a primeira identificação BOLxx livre para a data de execução.
+    Encontra a próxima identificação BOLxx livre para a data de execução.
 
     Ajuste importante:
-    - Testa BOL01 até BOL100.
+    - Reaproveita o último BOL do dia e começa diretamente no próximo número.
+    - Se houver uma tentativa pendente, testa novamente esse número: reutiliza se
+      estiver livre ou avança se o SAP indicar que já foi ocupado.
+    - Sem memória válida, mantém o comportamento seguro de BOL01 até BOL100.
     - Não usa mais o botão de status btn[20] para decidir se a BOL está livre,
       porque isso estava fazendo o fluxo parar/travar em BOL10/BOL11.
     - A BOL é considerada ocupada quando, na aba Parâmetro, já existe cliente
@@ -150,43 +154,69 @@ def gerar_identificacao(session, data_exec):
     - Ao encontrar uma BOL livre, volta para Status e retorna a identificação.
     """
 
-    for i in range(1, 101):
-        ident = f"BOL{i:02d}"
+    with memoria_bol(data_exec) as memoria:
+        inicio = memoria.proximo_numero()
 
-        wait_for_element(session, _CAMPO_DATA_EXEC, timeout=10).text = data_exec
-        wait_for_element(session, _CAMPO_IDENT, timeout=10).text = ident
-        session.findById("wnd[0]").sendVKey(0)
-        wait_until_ready(session)
-
-        try:
-            wait_for_element(session, _ABA_PAR, timeout=10).select()
-            wait_until_ready(session)
-
-            campo_cliente = wait_for_element(
-                session,
-                _CAMPO_PAR_CLIENTE,
-                timeout=8,
+        if inicio > 100:
+            raise Exception(
+                "A memória do dia já alcançou BOL100. Não há nova identificação "
+                "disponível para a F110."
             )
 
-            if campo_cliente.text.strip():
+        if logger:
+            origem_label = {
+                "inicial": "sem memória anterior",
+                "historico": "histórico compartilhado",
+                "memoria": "último BOL confirmado",
+                "tentativa_pendente": "tentativa anterior ainda livre",
+                "reserva_ativa": "reserva de outra execução",
+            }.get(memoria.origem, memoria.origem)
+            logger.add(
+                6,
+                f"Busca BOL otimizada ({origem_label}). "
+                f"Verificação iniciada em BOL{inicio:02d}.",
+                publico=True,
+            )
+
+        for i in range(inicio, 101):
+            ident = f"BOL{i:02d}"
+
+            wait_for_element(session, _CAMPO_DATA_EXEC, timeout=10).text = data_exec
+            wait_for_element(session, _CAMPO_IDENT, timeout=10).text = ident
+            session.findById("wnd[0]").sendVKey(0)
+            wait_until_ready(session)
+
+            try:
+                wait_for_element(session, _ABA_PAR, timeout=10).select()
+                wait_until_ready(session)
+
+                campo_cliente = wait_for_element(
+                    session,
+                    _CAMPO_PAR_CLIENTE,
+                    timeout=8,
+                )
+
+                if campo_cliente.text.strip():
+                    wait_for_element(session, _ABA_STA, timeout=10).select()
+                    wait_until_ready(session)
+                    continue
+
                 wait_for_element(session, _ABA_STA, timeout=10).select()
                 wait_until_ready(session)
-                continue
+                memoria.registrar_tentativa(i)
+                return ident
 
-            wait_for_element(session, _ABA_STA, timeout=10).select()
-            wait_until_ready(session)
-            return ident
-
-        except Exception:
-            # Se a aba Parâmetro/campo cliente não existir ainda para a BOL,
-            # tratamos como livre, mas deixamos a tela estabilizada em Status.
-            try:
-                wait_for_element(session, _ABA_STA, timeout=5).select()
-                wait_until_ready(session)
             except Exception:
-                pass
+                # Se a aba Parâmetro/campo cliente não existir ainda para a BOL,
+                # tratamos como livre, mas deixamos a tela estabilizada em Status.
+                try:
+                    wait_for_element(session, _ABA_STA, timeout=5).select()
+                    wait_until_ready(session)
+                except Exception:
+                    pass
 
-            return ident
+                memoria.registrar_tentativa(i)
+                return ident
 
     raise Exception("Nenhuma identificação disponível entre BOL01 e BOL100 para o F110.")
 
@@ -446,7 +476,7 @@ def f110(
         abrir_f110(session)
 
         _notificar(progress_callback, "processando", "Gerando identificação BOL...", 20)
-        identificacao = gerar_identificacao(session, data_exec)
+        identificacao = gerar_identificacao(session, data_exec, logger=logger)
         logger.add(6, f"Identificação F110 selecionada: {identificacao}")
 
         _notificar(progress_callback, "processando", "Preenchendo parâmetros do F110...", 34)
@@ -471,6 +501,23 @@ def f110(
 
         _notificar(progress_callback, "processando", "Executando pagamento e impressão...", 96)
         job_name = executar_pagamento_e_impressao(session, identificacao)
+
+        try:
+            confirmar_identificacao(data_exec, identificacao)
+            logger.add(
+                6,
+                f"Memória BOL atualizada com {identificacao} para {data_exec}.",
+                publico=False,
+            )
+        except Exception as exc:
+            # A F110 já foi executada; falha de memória não pode transformar um
+            # boleto concluído em erro. Na próxima execução o SAP valida de novo.
+            logger.add(
+                6,
+                f"Não foi possível confirmar a memória de {identificacao}: {exc}",
+                nivel="AVISO",
+                publico=False,
+            )
 
         finalizacao_boleto = finalizar_boleto_f110(
             session,

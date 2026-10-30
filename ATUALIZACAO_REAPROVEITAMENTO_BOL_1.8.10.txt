@@ -1,0 +1,20 @@
+ATUALIZAÇÃO 1.8.10 - REAPROVEITAMENTO DO ÚLTIMO BOL
+
+O sistema agora memoriza o último BOL utilizado em cada dia.
+
+Exemplo:
+- último concluído: BOL08;
+- próxima execução: começa diretamente em BOL09;
+- BOL01 até BOL08 não são consultados novamente.
+
+Segurança do fluxo:
+- o BOL memorizado sempre é validado no SAP antes de ser usado;
+- se BOL09 estiver ocupado, o sistema avança para BOL10;
+- se uma tentativa anterior não chegou a ocupar o número, ele pode ser reutilizado;
+- reservas temporárias reduzem conflito entre dois computadores;
+- no dia seguinte a sequência usa a memória correspondente à nova data.
+
+Arquivo compartilhado:
+dados_compartilhados\f110\ultimo_bol.json
+
+O arquivo é criado automaticamente e deve ser preservado nas atualizações.
