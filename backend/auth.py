@@ -25,6 +25,9 @@ _BLOQUEIO_MINUTOS = 15
 _MAX_TOKENS_POR_USUARIO = 5
 _MIN_MATRICULA_CARACTERES = 4
 _MAX_MATRICULA_CARACTERES = 7
+_RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_RECOVERY_CODE_LENGTH = 16
+_MAX_RECOVERY_FAILURES = 5
 
 
 def _agora() -> datetime:
@@ -171,6 +174,50 @@ def _token_hash(segredo: str) -> str:
     return hashlib.sha256(segredo.encode("utf-8")).hexdigest()
 
 
+def _normalizar_chave_recuperacao(valor: Any) -> str:
+    return "".join(
+        caractere
+        for caractere in str(valor or "").strip().upper()
+        if caractere in _RECOVERY_CODE_ALPHABET
+    )
+
+
+def _recovery_hash(chave: str) -> str:
+    return hashlib.sha256(chave.encode("ascii")).hexdigest()
+
+
+def _nova_chave_recuperacao() -> tuple[dict, str]:
+    segredo = "".join(
+        secrets.choice(_RECOVERY_CODE_ALPHABET)
+        for _ in range(_RECOVERY_CODE_LENGTH)
+    )
+    chave_formatada = "-".join(
+        segredo[indice : indice + 4]
+        for indice in range(0, len(segredo), 4)
+    )
+    agora = _iso()
+    return (
+        {
+            "hash": _recovery_hash(segredo),
+            "criado_em": agora,
+            "falhas_consecutivas": 0,
+            "bloqueado_ate": "",
+        },
+        chave_formatada,
+    )
+
+
+def _garantir_chave_recuperacao(usuario: dict) -> str:
+    recuperacao = usuario.get("recuperacao")
+
+    if isinstance(recuperacao, dict) and str(recuperacao.get("hash") or ""):
+        return ""
+
+    registro, chave = _nova_chave_recuperacao()
+    usuario["recuperacao"] = registro
+    return chave
+
+
 def _proteger_local(payload: dict) -> None:
     try:
         import win32crypt
@@ -184,7 +231,13 @@ def _proteger_local(payload: dict) -> None:
         None,
         None,
         0,
-    )[1]
+    )
+    # CryptProtectData retorna bytes nas versões atuais do pywin32. Algumas
+    # implementações antigas retornavam uma tupla; aceitamos os dois formatos.
+    if isinstance(protegido, tuple):
+        protegido = protegido[1]
+    if not isinstance(protegido, bytes):
+        raise RuntimeError("O Windows retornou um token protegido em formato inválido.")
     caminho = _arquivo_lembrar_local()
     caminho.parent.mkdir(parents=True, exist_ok=True)
     caminho.write_bytes(base64.b64encode(protegido))
@@ -264,6 +317,10 @@ def _publico(usuario: dict) -> dict:
         "matricula": usuario["matricula"],
         "ultimo_checkin": usuario.get("ultimo_checkin") or "",
         "criado_em": usuario.get("criado_em") or "",
+        "recuperacao_configurada": bool(
+            isinstance(usuario.get("recuperacao"), dict)
+            and usuario["recuperacao"].get("hash")
+        ),
     }
 
 
@@ -277,6 +334,7 @@ def cadastrar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dict
             if any(item.get("matricula") == chave for item in banco["usuarios"]):
                 raise ValueError("Esta matricula ja possui cadastro. Use a tela de login.")
             agora = _iso()
+            recuperacao, chave_recuperacao = _nova_chave_recuperacao()
             usuario = {
                 "matricula": chave,
                 "senha": _novo_registro_senha(senha_valida),
@@ -289,6 +347,7 @@ def cadastrar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dict
                 "falhas_consecutivas": 0,
                 "bloqueado_ate": "",
                 "tokens": [],
+                "recuperacao": recuperacao,
             }
             banco["usuarios"].append(usuario)
             _salvar_banco(banco)
@@ -298,7 +357,11 @@ def cadastrar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dict
             "lembrado": False,
             "aviso": "",
             "login_required": True,
-            "msg": "Cadastro concluido. Entre com sua matricula e senha para acessar o sistema.",
+            "chave_recuperacao": chave_recuperacao,
+            "msg": (
+                "Cadastro concluido. Guarde sua chave de recuperacao e depois "
+                "entre com sua matricula e senha."
+            ),
         }
 
 
@@ -369,6 +432,7 @@ def autenticar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dic
             usuario["ultimo_checkin"] = agora
             usuario["ultima_versao"] = str(versao_app or "")
             usuario["atualizado_em"] = agora
+            chave_recuperacao = _garantir_chave_recuperacao(usuario)
             token_local = _emitir_token(usuario) if lembrar else None
             _salvar_banco(banco)
         lembrado, aviso = _salvar_lembranca_ou_aviso(token_local)
@@ -377,6 +441,7 @@ def autenticar_usuario(matricula, senha, *, lembrar=False, versao_app="") -> dic
             "usuario": _publico(usuario),
             "lembrado": lembrado,
             "aviso": aviso,
+            "chave_recuperacao": chave_recuperacao,
         }
 
 
@@ -413,8 +478,137 @@ def verificar_acesso_lembrado(*, versao_app="") -> dict:
             usuario["ultimo_checkin"] = agora
             usuario["ultima_versao"] = str(versao_app or "")
             usuario["atualizado_em"] = agora
+            chave_recuperacao = _garantir_chave_recuperacao(usuario)
             _salvar_banco(banco)
-            return {"ok": True, "lembrado": True, "usuario": _publico(usuario)}
+            return {
+                "ok": True,
+                "lembrado": True,
+                "usuario": _publico(usuario),
+                "chave_recuperacao": chave_recuperacao,
+            }
+
+
+def _recuperacao_bloqueada(registro: dict) -> bool:
+    texto = str(registro.get("bloqueado_ate") or "")
+
+    if not texto:
+        return False
+
+    try:
+        return datetime.fromisoformat(texto) > _agora()
+    except Exception:
+        return False
+
+
+def _token_local_valido(usuario: dict, matricula: str) -> bool:
+    local = _ler_local_protegido()
+
+    if not local or str(local.get("matricula") or "") != matricula:
+        return False
+
+    token_id = str(local.get("token_id") or "")
+    segredo = str(local.get("segredo") or "")
+    token = next(
+        (
+            item
+            for item in usuario.get("tokens", [])
+            if str(item.get("id") or "") == token_id
+        ),
+        None,
+    )
+
+    return bool(
+        token
+        and segredo
+        and hmac.compare_digest(
+            str(token.get("hash") or ""),
+            _token_hash(segredo),
+        )
+    )
+
+
+def recuperar_acesso(
+    matricula,
+    chave_recuperacao,
+    nova_senha,
+    *,
+    versao_app="",
+) -> dict:
+    chave = _matricula(matricula)
+    senha_valida = _validar_senha(nova_senha)
+    codigo = _normalizar_chave_recuperacao(chave_recuperacao)
+
+    with _LOCK:
+        caminho = _arquivo_usuarios()
+
+        with _file_lock(caminho):
+            banco = _ler_banco()
+            usuario = next(
+                (item for item in banco["usuarios"] if item.get("matricula") == chave),
+                None,
+            )
+            recuperacao = (
+                usuario.get("recuperacao")
+                if usuario and isinstance(usuario.get("recuperacao"), dict)
+                else {}
+            )
+
+            if usuario and _recuperacao_bloqueada(recuperacao):
+                raise ValueError(
+                    "A recuperacao esta temporariamente bloqueada. Aguarde 15 minutos."
+                )
+
+            hash_esperado = str(recuperacao.get("hash") or "")
+            codigo_valido = bool(
+                usuario
+                and len(codigo) == _RECOVERY_CODE_LENGTH
+                and hash_esperado
+                and hmac.compare_digest(hash_esperado, _recovery_hash(codigo))
+            )
+            token_valido = bool(usuario and _token_local_valido(usuario, chave))
+
+            if not (codigo_valido or token_valido):
+                if usuario:
+                    falhas = int(recuperacao.get("falhas_consecutivas") or 0) + 1
+                    recuperacao["falhas_consecutivas"] = falhas
+
+                    if falhas >= _MAX_RECOVERY_FAILURES:
+                        recuperacao["falhas_consecutivas"] = 0
+                        recuperacao["bloqueado_ate"] = _iso(
+                            _agora() + timedelta(minutes=_BLOQUEIO_MINUTOS)
+                        )
+
+                    usuario["recuperacao"] = recuperacao
+                    usuario["atualizado_em"] = _iso()
+                    _salvar_banco(banco)
+
+                raise ValueError(
+                    "Matricula ou chave de recuperacao invalidas. Confira os dados."
+                )
+
+            nova_recuperacao, nova_chave = _nova_chave_recuperacao()
+            agora = _iso()
+            usuario["senha"] = _novo_registro_senha(senha_valida)
+            usuario["recuperacao"] = nova_recuperacao
+            usuario["tokens"] = []
+            usuario["falhas_consecutivas"] = 0
+            usuario["bloqueado_ate"] = ""
+            usuario["ultima_versao"] = str(versao_app or "")
+            usuario["atualizado_em"] = agora
+            usuario["senha_redefinida_em"] = agora
+            _salvar_banco(banco)
+
+    _remover_lembranca_local()
+    return {
+        "ok": True,
+        "usuario": _publico(usuario),
+        "login_required": True,
+        "chave_recuperacao": nova_chave,
+        "msg": (
+            "Senha redefinida. Guarde a nova chave de recuperacao e faca login "
+            "com a nova senha."
+        ),
+    }
 
 
 def encerrar_acesso_lembrado() -> dict:

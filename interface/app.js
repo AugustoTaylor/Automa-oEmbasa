@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.10";
+const APP_VERSION = "1.8.11";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
@@ -181,6 +181,7 @@ const state = {
   usuarioAutenticado: null,
   authBusy: false,
   authInicializada: false,
+  authRecoveryKey: "",
   valueMode: "auto",
   theme: "light",
   lastTipo: "",
@@ -306,33 +307,79 @@ function mostrarAuthSucesso(mensagem = "") {
 
 function setAuthBusy(busy, texto = "") {
   state.authBusy = Boolean(busy);
-  for (const id of ["authLoginButton", "authCadastroButton", "authLoginTab", "authCadastroTab"]) {
+  for (const id of [
+    "authLoginButton",
+    "authCadastroButton",
+    "authRecoveryButton",
+    "authRecoveryOpenButton",
+    "authRecoveryBackButton",
+    "authLoginTab",
+    "authCadastroTab"
+  ]) {
     const node = el(id);
     if (node) node.disabled = state.authBusy;
   }
   if (state.authBusy && texto) {
-    const ativo = el("authCadastroForm")?.classList.contains("hidden")
-      ? el("authLoginButton")
-      : el("authCadastroButton");
+    const ativo = !el("authRecoveryForm")?.classList.contains("hidden")
+      ? el("authRecoveryButton")
+      : el("authCadastroForm")?.classList.contains("hidden")
+        ? el("authLoginButton")
+        : el("authCadastroButton");
     if (ativo) ativo.textContent = texto;
   } else {
     if (el("authLoginButton")) el("authLoginButton").textContent = "Entrar";
     if (el("authCadastroButton")) el("authCadastroButton").textContent = "Criar acesso";
+    if (el("authRecoveryButton")) el("authRecoveryButton").textContent = "Redefinir senha";
   }
 }
 
 function mostrarAuthPainel(painel = "login", forcar = false) {
   if (state.authBusy && !forcar) return;
   const cadastro = painel === "cadastro";
-  el("authLoginForm")?.classList.toggle("hidden", cadastro);
+  const recuperacao = painel === "recuperacao";
+  const login = !cadastro && !recuperacao;
+  el("authLoginForm")?.classList.toggle("hidden", !login);
   el("authCadastroForm")?.classList.toggle("hidden", !cadastro);
-  el("authLoginTab")?.classList.toggle("active", !cadastro);
+  el("authRecoveryForm")?.classList.toggle("hidden", !recuperacao);
+  el("authLoginTab")?.classList.toggle("active", login);
   el("authCadastroTab")?.classList.toggle("active", cadastro);
   mostrarAuthErro("");
   mostrarAuthSucesso("");
+  if (!recuperacao) {
+    if (el("authRecoveryKey")) el("authRecoveryKey").value = "";
+    if (el("authRecoverySenha")) el("authRecoverySenha").value = "";
+    if (el("authRecoveryConfirmacao")) el("authRecoveryConfirmacao").value = "";
+  }
   window.setTimeout(() => {
-    (cadastro ? el("authCadastroMatricula") : el("authLoginMatricula"))?.focus();
+    const destino = cadastro
+      ? el("authCadastroMatricula")
+      : recuperacao
+        ? el("authRecoveryMatricula")
+        : el("authLoginMatricula");
+    destino?.focus();
   }, 50);
+}
+
+function mostrarChaveRecuperacao(chave, mensagem = "") {
+  const valor = String(chave || "").trim();
+  if (!valor) return;
+  state.authRecoveryKey = valor;
+  if (el("authRecoveryKeyValue")) el("authRecoveryKeyValue").textContent = valor;
+  if (el("authRecoveryKeyMessage")) {
+    el("authRecoveryKeyMessage").textContent = mensagem || "Esta chave sera exigida se voce esquecer a senha.";
+  }
+  openModal("authRecoveryKeyModal");
+}
+
+async function copiarChaveRecuperacao() {
+  if (!state.authRecoveryKey) return;
+  await copiarTextoParaAreaTransferencia(state.authRecoveryKey);
+  showSimpleOperationalToast("Chave de recuperacao copiada.");
+}
+
+function closeAuthRecoveryKeyModal() {
+  closeModal("authRecoveryKeyModal");
+  state.authRecoveryKey = "";
 }
 
 function bloquearInterfacePorLogin(bloquear) {
@@ -366,6 +413,14 @@ async function concluirLogin(resultado) {
   setStatus("Sistema pronto", "success");
   if (resultado?.aviso) {
     showSimpleOperationalToast(resultado.aviso);
+  } else if (resultado?.lembrado) {
+    showSimpleOperationalToast("Acesso lembrado com seguranca neste computador.");
+  }
+  if (resultado?.chave_recuperacao) {
+    mostrarChaveRecuperacao(
+      resultado.chave_recuperacao,
+      "Esta conta recebeu uma chave de recuperacao. Guarde-a para redefinir a senha no futuro."
+    );
   }
 }
 
@@ -421,6 +476,54 @@ async function cadastrarNoSistema(event) {
     mostrarAuthPainel("login", true);
     mostrarAuthSucesso(
       resposta?.msg || "Cadastro concluido. Entre com sua matricula e senha para acessar o sistema."
+    );
+    mostrarChaveRecuperacao(
+      resposta?.chave_recuperacao,
+      "Cadastro concluido. Guarde esta chave antes de fazer o primeiro login."
+    );
+    window.setTimeout(() => el("authLoginSenha")?.focus(), 50);
+  } catch (error) {
+    mostrarAuthErro(error?.message || String(error));
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function recuperarAcesso(event) {
+  event?.preventDefault();
+  if (state.authBusy || !window.pywebview?.api?.recuperar_acesso) return;
+  const matricula = String(el("authRecoveryMatricula")?.value || "").trim().slice(0, MAX_MATRICULA_CARACTERES);
+  const chaveRecuperacao = String(el("authRecoveryKey")?.value || "").trim();
+  const novaSenha = String(el("authRecoverySenha")?.value || "");
+  const confirmacao = String(el("authRecoveryConfirmacao")?.value || "");
+
+  if (novaSenha !== confirmacao) {
+    mostrarAuthErro("As novas senhas digitadas nao conferem.");
+    return;
+  }
+
+  setAuthBusy(true, "Redefinindo...");
+  mostrarAuthErro("");
+  mostrarAuthSucesso("");
+
+  try {
+    const resposta = await window.pywebview.api.recuperar_acesso({
+      matricula,
+      chave_recuperacao: chaveRecuperacao,
+      nova_senha: novaSenha,
+      versao_app: APP_VERSION
+    });
+    if (!resposta?.ok) throw new Error(resposta?.msg || "Nao foi possivel recuperar o acesso.");
+
+    if (el("authLoginMatricula")) el("authLoginMatricula").value = matricula;
+    if (el("authRecoveryKey")) el("authRecoveryKey").value = "";
+    if (el("authRecoverySenha")) el("authRecoverySenha").value = "";
+    if (el("authRecoveryConfirmacao")) el("authRecoveryConfirmacao").value = "";
+    mostrarAuthPainel("login", true);
+    mostrarAuthSucesso(resposta?.msg || "Senha redefinida. Entre com a nova senha.");
+    mostrarChaveRecuperacao(
+      resposta?.chave_recuperacao,
+      "Sua senha foi redefinida. Esta e a nova chave para uma futura recuperacao."
     );
     window.setTimeout(() => el("authLoginSenha")?.focus(), 50);
   } catch (error) {
@@ -6613,6 +6716,7 @@ function closeContactSuccessModal() {
 }
 
 const MODAL_IDS = [
+  "authRecoveryKeyModal",
   "contactModal",
   "contactSuccessModal",
   "pdfNameModal",

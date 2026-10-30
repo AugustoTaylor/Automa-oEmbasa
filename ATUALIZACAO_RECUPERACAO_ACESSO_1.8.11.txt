@@ -1,0 +1,24 @@
+EMBASA PEDIDOS SAP - ATUALIZACAO 1.8.11
+Data: 30/10/2026
+
+RECUPERAR ACESSO
+- O painel de login agora possui o botão "Recuperar acesso".
+- Informe a matrícula, a chave de recuperação e a nova senha.
+- Se este computador ainda tiver um acesso lembrado válido para a mesma matrícula, a chave pode ficar em branco.
+- Depois da redefinição, guarde a nova chave exibida e faça login com a nova senha.
+
+CHAVE DE RECUPERACAO
+- Novos cadastros recebem uma chave exibida somente no momento do cadastro.
+- Contas antigas recebem a chave no primeiro login bem-sucedido após esta atualização.
+- O sistema armazena somente o hash da chave, nunca o texto completo.
+- Cada recuperação invalida a chave anterior e gera outra.
+
+LEMBRAR SENHA
+- A opção agora mantém o acesso entre as aberturas do programa no mesmo usuário do Windows.
+- A senha não é gravada. O computador conserva somente um token aleatório criptografado pela proteção de dados do Windows.
+- Sair do sistema ou redefinir a senha revoga o token.
+
+SEGURANCA
+- A recuperação possui limite de tentativas e bloqueio temporário.
+- Redefinir a senha encerra os acessos lembrados anteriores e exige novo login.
+- Não compartilhe a chave de recuperação.

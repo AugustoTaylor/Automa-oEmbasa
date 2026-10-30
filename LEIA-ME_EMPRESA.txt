@@ -1,6 +1,6 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.10
-Atualizado em: 29/10/2026
+Versão: 1.8.11
+Atualizado em: 30/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
 O atalho do usuário deve apontar para:
@@ -40,13 +40,16 @@ Os dados compartilhados abaixo ficam fora do build e são preservados nas atuali
 - dados_compartilhados\autenticacao\usuarios.json
 - dados_compartilhados\saldo_contas\modelos.json
 
-O arquivo de usuários não contém senhas legíveis. Ele guarda somente hash PBKDF2-SHA256, salt e tokens protegidos.
-A opção "Lembrar senha" grava no computador do usuário apenas um token criptografado pela proteção de dados do Windows.
+O arquivo de usuários não contém senhas nem chaves de recuperação legíveis. Ele guarda somente hashes PBKDF2-SHA256/SHA-256, salt e tokens revogáveis.
+A opção "Lembrar senha" grava no computador do usuário apenas um token criptografado pela proteção de dados do Windows. Ao abrir novamente o sistema nesse mesmo usuário do Windows, o login é feito automaticamente enquanto o token continuar válido. A senha nunca é gravada no computador.
 Não copie, edite manualmente nem apague esses arquivos durante uma atualização.
 
 Na primeira utilização, o funcionário deve escolher Cadastrar e informar uma matrícula de 4 a 7 caracteres e uma senha com ao menos 8 caracteres, letras e números.
-O cadastro não abre o sistema automaticamente: depois de criar o acesso, o funcionário deve entrar pela tela de login. A opção "Lembrar senha" é aplicada somente nesse login.
+O cadastro exibe uma chave de recuperação uma única vez. O funcionário deve guardá-la em local seguro. O cadastro não abre o sistema automaticamente: depois de criar o acesso, o funcionário deve entrar pela tela de login. A opção "Lembrar senha" é aplicada somente nesse login.
 Nas utilizações seguintes, o sistema faz o check-in na base compartilhada. Se a pasta da rede estiver indisponível, o acesso é bloqueado em vez de criar um cadastro local paralelo.
+
+O botão "Recuperar acesso" permite redefinir a senha com a matrícula e a chave de recuperação. Se o computador ainda tiver um acesso lembrado válido para a mesma matrícula, a chave pode ficar em branco. Depois da redefinição, todos os tokens anteriores são revogados, uma nova chave é exibida e o usuário precisa entrar com a nova senha.
+Contas criadas em versões anteriores recebem sua primeira chave de recuperação no próximo login bem-sucedido. Se um usuário antigo esquecer a senha antes desse primeiro login e não tiver um acesso lembrado válido, o responsável pelo arquivo compartilhado deverá prestar o atendimento administrativo; não existe recuperação insegura por perguntas pessoais ou senha padrão.
 
 Na tela Saldo de contas, a planilha é detectada e apresentada para confirmação. Os modelos salvos podem alterar, desativar ou excluir até mesmo as contas padrão. O número 11311000 continua obrigatoriamente desativado devido ao timeout conhecido no SAP.
 

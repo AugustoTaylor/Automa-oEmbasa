@@ -17,6 +17,7 @@ from backend.auth import (
     autenticar_usuario as autenticar_usuario_compartilhado,
     cadastrar_usuario as cadastrar_usuario_compartilhado,
     encerrar_acesso_lembrado,
+    recuperar_acesso as recuperar_acesso_compartilhado,
     verificar_acesso_lembrado,
 )
 from backend.documentos import analisar_doc, limpar_doc
@@ -233,6 +234,21 @@ class API:
         except Exception as exc:
             self._usuario_autenticado = None
             return {"ok": False, "msg": str(exc) or "Nao foi possivel cadastrar."}
+
+    def recuperar_acesso(self, dados):
+        try:
+            payload = dict(dados or {})
+            resultado = recuperar_acesso_compartilhado(
+                payload.get("matricula"),
+                payload.get("chave_recuperacao"),
+                payload.get("nova_senha"),
+                versao_app=str(payload.get("versao_app") or ""),
+            )
+            self._usuario_autenticado = None
+            return _serializar_para_front(resultado)
+        except Exception as exc:
+            self._usuario_autenticado = None
+            return {"ok": False, "msg": str(exc) or "Nao foi possivel recuperar o acesso."}
 
     def sair_usuario(self):
         self._usuario_autenticado = None

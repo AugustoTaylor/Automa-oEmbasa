@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,6 +31,11 @@ class AutenticacaoTests(unittest.TestCase):
                 self.assertEqual(registro["ultimo_checkin"], "")
                 self.assertEqual(registro["tokens"], [])
                 self.assertNotIn("Senha123", banco.read_text(encoding="utf-8"))
+                self.assertNotIn(
+                    cadastrado["chave_recuperacao"],
+                    banco.read_text(encoding="utf-8"),
+                )
+                self.assertTrue(registro["recuperacao"]["hash"])
                 self.assertEqual(registro["senha"]["algoritmo"], "pbkdf2_sha256")
                 self.assertGreaterEqual(registro["senha"]["iteracoes"], 300_000)
 
@@ -73,6 +79,122 @@ class AutenticacaoTests(unittest.TestCase):
                 payload = json.loads(banco.read_text(encoding="utf-8"))
                 self.assertEqual(payload["usuarios"][0]["ultima_versao"], "1.8.3")
 
+    @unittest.skipUnless(sys.platform == "win32", "DPAPI disponivel somente no Windows")
+    def test_lembrar_faz_roundtrip_real_com_protecao_do_windows(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            lembrar = Path(temporario) / "lembrar.dat"
+            token = {
+                "matricula": "e123456",
+                "token_id": "token-teste",
+                "segredo": "segredo-aleatorio",
+            }
+
+            with patch.object(auth, "_arquivo_lembrar_local", return_value=lembrar):
+                auth._proteger_local(token)
+                recuperado = auth._ler_local_protegido()
+
+            self.assertEqual(recuperado, token)
+            self.assertTrue(lembrar.exists())
+            self.assertNotIn(b"segredo-aleatorio", lembrar.read_bytes())
+
+    def test_recuperar_acesso_troca_senha_revoga_tokens_e_gira_chave(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            banco = Path(temporario) / "usuarios.json"
+            lembrar = Path(temporario) / "lembrar.dat"
+
+            with (
+                patch.object(auth, "_arquivo_usuarios", return_value=banco),
+                patch.object(auth, "_arquivo_lembrar_local", return_value=lembrar),
+            ):
+                cadastrado = auth.cadastrar_usuario("e45678", "Senha123")
+                chave_original = cadastrado["chave_recuperacao"]
+                recuperado = auth.recuperar_acesso(
+                    "e45678",
+                    chave_original.lower(),
+                    "NovaSenha987",
+                    versao_app="1.8.11",
+                )
+
+                self.assertTrue(recuperado["ok"])
+                self.assertTrue(recuperado["login_required"])
+                self.assertNotEqual(
+                    recuperado["chave_recuperacao"],
+                    chave_original,
+                )
+                with self.assertRaisesRegex(ValueError, "invalidas"):
+                    auth.autenticar_usuario("e45678", "Senha123")
+                login = auth.autenticar_usuario("e45678", "NovaSenha987")
+                self.assertTrue(login["ok"])
+
+                payload = json.loads(banco.read_text(encoding="utf-8"))
+                registro = payload["usuarios"][0]
+                self.assertEqual(registro["tokens"], [])
+                self.assertNotIn(chave_original, banco.read_text(encoding="utf-8"))
+                self.assertNotIn(
+                    recuperado["chave_recuperacao"],
+                    banco.read_text(encoding="utf-8"),
+                )
+
+    def test_acesso_lembrado_permite_recuperar_sem_digitar_chave(self):
+        token_local = {}
+
+        with tempfile.TemporaryDirectory() as temporario:
+            banco = Path(temporario) / "usuarios.json"
+            lembrar = Path(temporario) / "lembrar.dat"
+
+            def proteger(payload):
+                token_local.clear()
+                token_local.update(payload)
+
+            with (
+                patch.object(auth, "_arquivo_usuarios", return_value=banco),
+                patch.object(auth, "_arquivo_lembrar_local", return_value=lembrar),
+                patch.object(auth, "_proteger_local", side_effect=proteger),
+                patch.object(
+                    auth,
+                    "_ler_local_protegido",
+                    side_effect=lambda: dict(token_local) or None,
+                ),
+                patch.object(
+                    auth,
+                    "_remover_lembranca_local",
+                    side_effect=token_local.clear,
+                ),
+            ):
+                auth.cadastrar_usuario("e76543", "Senha123")
+                login = auth.autenticar_usuario("e76543", "Senha123", lembrar=True)
+                self.assertTrue(login["lembrado"])
+
+                recuperado = auth.recuperar_acesso(
+                    "e76543",
+                    "",
+                    "SenhaNova456",
+                )
+                self.assertTrue(recuperado["ok"])
+                self.assertEqual(token_local, {})
+                self.assertTrue(
+                    auth.autenticar_usuario("e76543", "SenhaNova456")["ok"]
+                )
+
+    def test_conta_antiga_recebe_chave_no_primeiro_login_apos_atualizacao(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            banco = Path(temporario) / "usuarios.json"
+            lembrar = Path(temporario) / "lembrar.dat"
+
+            with (
+                patch.object(auth, "_arquivo_usuarios", return_value=banco),
+                patch.object(auth, "_arquivo_lembrar_local", return_value=lembrar),
+            ):
+                auth.cadastrar_usuario("e11223", "Senha123")
+                payload = json.loads(banco.read_text(encoding="utf-8"))
+                payload["usuarios"][0].pop("recuperacao")
+                banco.write_text(json.dumps(payload), encoding="utf-8")
+
+                login = auth.autenticar_usuario("e11223", "Senha123")
+                self.assertTrue(login["chave_recuperacao"])
+                atualizado = json.loads(banco.read_text(encoding="utf-8"))
+                self.assertTrue(atualizado["usuarios"][0]["recuperacao"]["hash"])
+
     def test_senha_fraca_e_matricula_invalida_sao_bloqueadas(self):
         with self.assertRaisesRegex(ValueError, "4 e 7 caracteres"):
             auth.cadastrar_usuario("abc", "Senha123")
@@ -114,6 +236,31 @@ class AutenticacaoTests(unittest.TestCase):
         resultado = api.listar_modelos_saldo_contas()
         self.assertFalse(resultado["ok"])
         self.assertTrue(resultado["auth_required"])
+
+    def test_api_recupera_mas_exige_login_com_a_nova_senha(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            banco = Path(temporario) / "usuarios.json"
+            lembrar = Path(temporario) / "lembrar.dat"
+
+            with (
+                patch.object(auth, "_arquivo_usuarios", return_value=banco),
+                patch.object(auth, "_arquivo_lembrar_local", return_value=lembrar),
+            ):
+                cadastro = auth.cadastrar_usuario("e99887", "Senha123")
+                api = API.__new__(API)
+                api._usuario_autenticado = {"matricula": "anterior"}
+                resposta = api.recuperar_acesso(
+                    {
+                        "matricula": "e99887",
+                        "chave_recuperacao": cadastro["chave_recuperacao"],
+                        "nova_senha": "NovaSenha123",
+                        "versao_app": "1.8.11",
+                    }
+                )
+
+                self.assertTrue(resposta["ok"])
+                self.assertTrue(resposta["login_required"])
+                self.assertIsNone(api._usuario_autenticado)
 
 
 if __name__ == "__main__":

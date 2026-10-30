@@ -148,6 +148,33 @@ body.modal-open {
   font-weight: 650;
 }
 .auth-remember input { width: 18px; height: 18px; accent-color: var(--accent); }
+.auth-remember-hint {
+  margin: -9px 0 0 27px;
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.4;
+}
+.auth-link-button {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 800;
+}
+.auth-link-button:hover { text-decoration: underline; }
+.auth-link-button:disabled { cursor: wait; opacity: .55; }
+.auth-recovery-heading {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.auth-recovery-heading strong { color: var(--ink); }
+.auth-recovery-heading span { color: var(--muted); font-size: .78rem; }
 .auth-register-note {
   margin: -2px 0 0;
   color: var(--muted);
@@ -175,6 +202,36 @@ body.modal-open {
   text-align: center;
 }
 .auth-card > .field-message { margin-top: 14px; text-align: center; }
+
+.auth-recovery-key-card { width: min(560px, calc(100vw - 32px)); }
+#authRecoveryKeyModal { z-index: 1100; }
+.auth-recovery-key-value {
+  display: block;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--accent);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: clamp(1.05rem, 4vw, 1.45rem);
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-align: center;
+  user-select: all;
+}
+.auth-recovery-key-warning {
+  color: var(--warning) !important;
+  font-size: .78rem !important;
+  font-weight: 750;
+}
+.auth-recovery-key-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+.auth-recovery-key-actions button { width: 100%; }
 
 .hidden {
   display: none !important;

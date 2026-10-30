@@ -36,7 +36,9 @@
           <input id="authLoginLembrar" type="checkbox" />
           <span>Lembrar senha neste computador</span>
         </label>
+        <p class="auth-remember-hint">Ao marcar, o sistema entrar&aacute; automaticamente nas pr&oacute;ximas aberturas deste computador.</p>
         <button id="authLoginButton" class="primary-action" type="submit">Entrar</button>
+        <button id="authRecoveryOpenButton" class="auth-link-button" type="button" onclick="mostrarAuthPainel('recuperacao')">Recuperar acesso</button>
       </form>
 
       <form id="authCadastroForm" class="auth-form hidden" onsubmit="cadastrarNoSistema(event)">
@@ -56,10 +58,51 @@
         <button id="authCadastroButton" class="primary-action" type="submit">Criar acesso</button>
       </form>
 
+      <form id="authRecoveryForm" class="auth-form hidden" onsubmit="recuperarAcesso(event)">
+        <div class="auth-recovery-heading">
+          <strong>Recuperar acesso</strong>
+          <span>Redefina a senha com sua chave de recupera&ccedil;&atilde;o.</span>
+        </div>
+        <label class="field">
+          <span>Matr&iacute;cula</span>
+          <input id="authRecoveryMatricula" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="4" maxlength="7" placeholder="At&eacute; 7 caracteres" required />
+        </label>
+        <label class="field">
+          <span>Chave de recupera&ccedil;&atilde;o</span>
+          <input id="authRecoveryKey" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="19" placeholder="XXXX-XXXX-XXXX-XXXX" />
+        </label>
+        <p class="auth-register-note">Se este computador ainda possuir um acesso lembrado v&aacute;lido, a chave pode ficar em branco.</p>
+        <label class="field">
+          <span>Nova senha</span>
+          <input id="authRecoverySenha" type="password" autocomplete="new-password" maxlength="128" placeholder="M&iacute;nimo de 8 caracteres, com letras e n&uacute;meros" required />
+        </label>
+        <label class="field">
+          <span>Confirmar nova senha</span>
+          <input id="authRecoveryConfirmacao" type="password" autocomplete="new-password" maxlength="128" placeholder="Digite a senha novamente" required />
+        </label>
+        <button id="authRecoveryButton" class="primary-action" type="submit">Redefinir senha</button>
+        <button id="authRecoveryBackButton" class="auth-link-button" type="button" onclick="mostrarAuthPainel('login')">Voltar para entrar</button>
+      </form>
+
       <p id="authError" class="field-message hidden"></p>
       <p id="authSuccess" class="auth-success-message hidden"></p>
       <p class="auth-security-note">A senha nao e armazenada. O sistema usa hash seguro na pasta compartilhada e protecao do Windows para lembrar o acesso.</p>
     </section>
+  </div>
+
+  <div id="authRecoveryKeyModal" class="contact-success-modal hidden" aria-live="polite">
+    <div class="contact-backdrop"></div>
+    <div class="contact-success-card auth-recovery-key-card">
+      <p class="section-kicker">Seguran&ccedil;a do acesso</p>
+      <h2>Guarde sua chave de recupera&ccedil;&atilde;o</h2>
+      <p id="authRecoveryKeyMessage">Esta chave ser&aacute; exigida se voc&ecirc; esquecer a senha.</p>
+      <code id="authRecoveryKeyValue" class="auth-recovery-key-value">----</code>
+      <p class="auth-recovery-key-warning">A chave completa &eacute; exibida somente agora. Guarde-a em local seguro e n&atilde;o compartilhe.</p>
+      <div class="auth-recovery-key-actions">
+        <button type="button" class="secondary-action" onclick="copiarChaveRecuperacao()">Copiar chave</button>
+        <button type="button" class="primary-action" onclick="closeAuthRecoveryKeyModal()">Entendi, guardei</button>
+      </div>
+    </div>
   </div>
 
   <aside id="appSidebar" class="app-sidebar" aria-label="Menu principal">
@@ -212,7 +255,7 @@
           <div class="hero-runtime">
             <span id="footerDate">Data --/--/----</span>
             <span id="footerTime">Hora --:--:--</span>
-            <span id="footerVersion">Vers&atilde;o da API 1.8.10</span>
+            <span id="footerVersion">Vers&atilde;o da API 1.8.11</span>
           </div>
         </div>
       </div>

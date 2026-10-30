@@ -1,3 +1,15 @@
+## Sexta-feira, 30/10/2026 - Versão 1.8.11 (recuperação de acesso e lembrar senha)
+
+- Adicionado o botão **Recuperar acesso** no painel de login, com matrícula, chave de recuperação, nova senha e confirmação.
+- Cada cadastro recebe uma chave de recuperação aleatória exibida apenas ao usuário; o arquivo compartilhado guarda somente o hash da chave.
+- Ao redefinir a senha, a chave anterior e todos os tokens de acesso são revogados, uma nova chave é emitida e o sistema exige um novo login.
+- O acesso também pode ser recuperado sem digitar a chave quando o mesmo computador ainda possui um token lembrado válido para a matrícula informada.
+- Contas antigas recebem sua chave no primeiro login bem-sucedido após a atualização.
+- Corrigido o armazenamento do token protegido pelo Windows: versões atuais do `pywin32` retornam os bytes diretamente, enquanto o código anterior tentava extrair uma posição e acabava impedindo o funcionamento de **Lembrar senha**.
+- Mantidos limite de tentativas e bloqueio temporário tanto no login quanto na recuperação; senhas e chaves completas não são gravadas no banco compartilhado.
+- Adicionados testes de recuperação, rotação de chave, revogação de tokens, compatibilidade com contas antigas, API/interface e ciclo real de criptografia/descriptografia pela DPAPI do Windows.
+- Validação local: 56 testes Python e 5 testes Node aprovados antes do build empresarial.
+
 ## Quinta-feira, 29/10/2026 - Versão 1.8.10 (reaproveitamento do último BOL)
 
 - A F110 agora mantém memória compartilhada do último BOL utilizado em cada data de execução.
