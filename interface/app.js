@@ -83,7 +83,7 @@ const BASE_STATUS = {
 
 const MAX_VALOR_CENTAVOS = 1000000;
 const MAX_CONTACT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-const APP_VERSION = "1.8.12";
+const APP_VERSION = "1.8.13";
 const MAX_MATRICULA_CARACTERES = 7;
 const DEVELOPER_PROFILES = Object.freeze({
   linkedin: "https://www.linkedin.com/in/augusto-taylor-425285364/",
@@ -243,6 +243,8 @@ const state = {
   clientRegistrationSource: "",
   currentWorkspace: "boletos",
   monitorMode: "boletos",
+  monitorSnapshots: {},
+  monitorStatusSnapshots: {},
   sidebarOpen: false,
   cadastroCepLookupTimer: 0,
   cadastroCepLookupSeq: 0,
@@ -549,6 +551,8 @@ async function sairDoSistema() {
     state.rascunhosBackendSincronizado = false;
     state.historicoItens = [];
     state.historicoSelecionado = null;
+    state.monitorSnapshots = {};
+    state.monitorStatusSnapshots = {};
     bloquearInterfacePorLogin(true);
     mostrarAuthPainel("login");
   }
@@ -2418,19 +2422,89 @@ function setSidebarActive(view) {
   }
 }
 
-function setMonitorMode(mode) {
-  const nextMode = MONITOR_STAGES[mode] ? mode : "boletos";
+function obterMonitorOperacaoAtiva() {
+  if (state.saldoPlanilhaBusy && state.monitorMode === "saldos") {
+    return "saldos";
+  }
+  if (state.extratoRunning && state.monitorMode === "extratos") {
+    return "extratos";
+  }
+  if (state.flowRunning) {
+    return state.monitorMode;
+  }
+  return "";
+}
 
-  if (state.monitorMode === nextMode && ETAPA_NODE_CACHE.length === MONITOR_STAGES[nextMode].length) {
-    return;
+function salvarSnapshotMonitor(mode = state.monitorMode) {
+  if (!MONITOR_STAGES[mode] || state.monitorMode !== mode) return;
+  state.monitorSnapshots[mode] = {
+    etapaAtual: state.etapaAtual,
+    status: [...state.etapasStatus],
+    progresso: [...state.etapasProgresso],
+    mensagens: [...state.etapasMensagens]
+  };
+}
+
+function restaurarSnapshotMonitor(mode) {
+  const snapshot = state.monitorSnapshots[mode];
+  if (!snapshot || snapshot.status?.length !== ETAPAS.length) {
+    resetarEtapas();
+    return false;
   }
 
+  state.etapasStatus = [...snapshot.status];
+  state.etapasProgresso = [...snapshot.progresso];
+  state.etapasMensagens = [...snapshot.mensagens];
+  ETAPAS.forEach((_, index) => {
+    setEtapa(
+      index,
+      state.etapasStatus[index] || "pending",
+      state.etapasProgresso[index] || 0,
+      state.etapasMensagens[index] || ""
+    );
+  });
+  state.etapaAtual = Number.isInteger(snapshot.etapaAtual)
+    ? snapshot.etapaAtual
+    : null;
+  return true;
+}
+
+function aplicarStatusPadraoWorkspace(mode, texto, classe, options = {}) {
+  if (options.status === false || obterMonitorOperacaoAtiva()) return;
+  if (state.monitorStatusSnapshots[mode]) return;
+  setStatus(texto, classe);
+}
+
+function setMonitorMode(mode, options = {}) {
+  const nextMode = MONITOR_STAGES[mode] ? mode : "boletos";
+  const monitorOperacao = obterMonitorOperacaoAtiva();
+
+  if (
+    !options.force
+    && monitorOperacao
+    && state.monitorMode === monitorOperacao
+    && nextMode !== monitorOperacao
+  ) {
+    return false;
+  }
+
+  if (state.monitorMode === nextMode && ETAPA_NODE_CACHE.length === MONITOR_STAGES[nextMode].length) {
+    return true;
+  }
+
+  salvarSnapshotMonitor(state.monitorMode);
   state.monitorMode = nextMode;
   ETAPAS = MONITOR_STAGES[nextMode];
   DISPLAY_STAGE_MAP = criarDisplayStageMap(ETAPAS);
   state.etapasConstruidas = false;
   construirEtapas();
-  resetarEtapas();
+  restaurarSnapshotMonitor(nextMode);
+  state.statusSnapshot = "";
+  const statusSalvo = state.monitorStatusSnapshots[nextMode];
+  if (statusSalvo) {
+    setStatus(statusSalvo.texto, statusSalvo.classe);
+  }
+  return true;
 }
 
 function mostrarPainelWorkspace(view) {
@@ -2459,9 +2533,7 @@ function showBoletoWorkspace(options = {}) {
   mostrarPainelWorkspace("boletos");
   hideCadastroClienteFeedback();
 
-  if (options.status !== false && !state.flowRunning) {
-    setStatus("Aguardando", "idle");
-  }
+  aplicarStatusPadraoWorkspace("boletos", "Aguardando", "idle", options);
 }
 
 function showMultaContratualWorkspace(options = {}) {
@@ -2475,9 +2547,7 @@ function showMultaContratualWorkspace(options = {}) {
   hideCadastroClienteFeedback();
   setSidebarExpanded(false);
 
-  if (options.status !== false) {
-    setStatus("Multa Contratual", "idle");
-  }
+  aplicarStatusPadraoWorkspace("multa", "Multa Contratual", "idle", options);
 
   window.setTimeout(() => el("multaDoc")?.focus(), 180);
 }
@@ -2499,7 +2569,7 @@ function showClienteRegistrationWorkspace() {
   preencherCadastroClienteComPayload(payload, { travarOrigem: false });
   abrirCadastroClientePanel();
   setSidebarExpanded(false);
-  setStatus("Cadastro de cliente", "idle");
+  aplicarStatusPadraoWorkspace("cliente", "Cadastro de cliente", "idle");
   window.setTimeout(() => el("clienteCadastroDoc")?.focus(), 180);
 }
 
@@ -2957,9 +3027,7 @@ function showExtratosWorkspace(options = {}) {
   preencherMesAnoExtratosPadrao();
   carregarPastaPadraoExtratos();
 
-  if (options.status !== false) {
-    setStatus("Baixar extratos", "idle");
-  }
+  aplicarStatusPadraoWorkspace("extratos", "Baixar extratos", "idle", options);
 
   window.setTimeout(() => el("extratoMes")?.focus(), 180);
 }
@@ -4101,12 +4169,12 @@ function showSaldoContasWorkspace(options = {}) {
     renderizarAnaliseSaldoContas(state.saldoPlanilhaAnalise);
   }
 
-  if (options.status !== false) {
-    setStatus(
-      state.saldoPlanilhaAnalise?.modelo_valido ? "Modelo validado" : "Saldo de contas",
-      state.saldoPlanilhaAnalise?.modelo_valido ? "success" : "idle"
-    );
-  }
+  aplicarStatusPadraoWorkspace(
+    "saldos",
+    state.saldoPlanilhaAnalise?.modelo_valido ? "Modelo validado" : "Saldo de contas",
+    state.saldoPlanilhaAnalise?.modelo_valido ? "success" : "idle",
+    options
+  );
 
   window.setTimeout(() => el("saldoPlanilhaSelecionarButton")?.focus(), 180);
 }
@@ -4401,6 +4469,7 @@ function setBaseStatus(status) {
 
 function setStatus(texto, classe) {
   const nextSnapshot = `${classe}::${texto}`;
+  state.monitorStatusSnapshots[state.monitorMode] = { texto, classe };
 
   if (state.statusSnapshot === nextSnapshot) {
     return;
@@ -6273,8 +6342,8 @@ function atualizarTratamentoCadastroPorDocumento() {
   atualizarCadastroTituloUI();
 }
 
-function abrirCadastroClientePanel() {
-  setMonitorMode("cliente");
+function abrirCadastroClientePanel(options = {}) {
+  setMonitorMode("cliente", { force: Boolean(options.forceMonitor) });
   mostrarPainelWorkspace("cliente");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -6289,7 +6358,7 @@ function abrirAbaCadastroCliente() {
   }
 
   preencherCadastroClienteComPayload(payload);
-  abrirCadastroClientePanel();
+  abrirCadastroClientePanel({ forceMonitor: true });
   setStatus("Aguardando cadastro", "idle");
   window.setTimeout(() => el("clienteCadastroNome1").focus(), 180);
 }
@@ -6597,7 +6666,7 @@ async function executarCriacaoSetoresPendentes() {
   }
 
   try {
-    setMonitorMode("setor");
+    setMonitorMode("setor", { force: true });
     resetarEtapas();
 
     if (button) {
@@ -7853,7 +7922,7 @@ async function executarFluxoMultaContratual(payload, options = {}) {
     ? cloneCheckpoint(checkpoint || state.resumeCheckpoint)
     : null;
 
-  setMonitorMode("multa");
+  setMonitorMode("multa", { force: true });
 
   if (!resume) {
     hideResumeBox();
@@ -7999,7 +8068,7 @@ async function executarFluxo(payload, options = {}) {
     ? cloneCheckpoint(checkpoint || state.resumeCheckpoint)
     : null;
 
-  setMonitorMode("boletos");
+  setMonitorMode("boletos", { force: true });
 
   if (!resume) {
     hideResumeBox();

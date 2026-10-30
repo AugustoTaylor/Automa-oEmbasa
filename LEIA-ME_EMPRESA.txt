@@ -1,5 +1,5 @@
 EMBASA PEDIDOS SAP - GUIA ÚNICO DE USO E PUBLICAÇÃO
-Versão: 1.8.12
+Versão: 1.8.13
 Atualizado em: 30/10/2026
 
 1. O QUE O USUÁRIO FINAL DEVE ABRIR
@@ -72,6 +72,13 @@ Exemplo: se o último concluído foi BOL08, a próxima F110 começa verificando 
 O arquivo também registra reservas temporárias para reduzir colisões entre computadores. Uma tentativa interrompida é validada novamente e pode ser reutilizada se continuar livre. A memória é separada por dia e o histórico compartilhado é usado para iniciar o arquivo quando já existem boletos concluídos.
 
 Não edite nem apague esse arquivo durante o expediente. Ele fica dentro de dados_compartilhados e é preservado pelo processo de atualização.
+
+4.3. TROCA DE SEÇÕES DURANTE UMA OPERAÇÃO
+O andamento visual de cada seção é preservado separadamente. Se uma consulta de saldo de contas ou uma baixa de extratos estiver em execução e o usuário abrir outra seção, a operação continua e o monitor permanece vinculado ao fluxo correto.
+
+Ao retornar à seção original, o sistema restaura as etapas, percentuais, mensagens e status exatamente no ponto em que estão. Os eventos enviados pelo backend não são descartados durante a navegação. Estados concluídos também ficam preservados até que o usuário inicie uma nova operação ou use a ação de limpeza da própria seção.
+
+A navegação entre seções não autoriza duas automações SAP simultâneas; o backend continua mantendo o bloqueio operacional existente.
 
 5. FALE CONOSCO
 O formulário envia os pedidos automaticamente para faft@embasa.ba.gov.br.

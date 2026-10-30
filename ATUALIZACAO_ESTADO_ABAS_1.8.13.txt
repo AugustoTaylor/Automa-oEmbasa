@@ -1,0 +1,13 @@
+EMBASA PEDIDOS SAP - ATUALIZACAO 1.8.13
+Data: 30/10/2026
+
+ESTADO DAS SECOES
+- Trocar de seção não apaga mais o andamento da operação anterior.
+- A consulta SAP continua recebendo e registrando os eventos de progresso mesmo quando outra tela está visível.
+- Ao retornar, etapas, percentuais, mensagens e status aparecem no ponto atual da execução.
+- O último estado concluído de cada seção também é preservado durante a navegação.
+
+SEGURANCA OPERACIONAL
+- A correção é somente de interface e não altera a sequência executada no SAP.
+- O sistema continua permitindo apenas uma automação SAP por vez.
+- Ao sair do login, as fotografias visuais das seções são descartadas.

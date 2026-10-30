@@ -1,3 +1,13 @@
+## Sexta-feira, 30/10/2026 - Versão 1.8.13 (estado preservado ao trocar de seção)
+
+- Corrigida a perda visual de andamento ao sair de **Saldo de contas** durante uma consulta SAP e retornar depois.
+- O monitor da operação ativa não é mais substituído pelo monitor da seção clicada; por isso os eventos de progresso enviados pelo backend continuam sendo processados.
+- Etapas, percentuais, mensagens e status agora possuem fotografias independentes por seção: boletos, cadastro, multa, extratos e saldo de contas.
+- Depois que uma operação termina, navegar por outras seções e voltar também restaura o último estado daquela tela, em vez de apresentar tudo como não iniciado.
+- O estado de monitoramento é limpo ao encerrar o login, evitando reaproveitamento entre sessões de usuários diferentes.
+- Transições internas necessárias ao fluxo SAP, como cadastro de cliente, criação de setor e retomada de boleto/multa, continuam podendo trocar o monitor de forma explícita.
+- Validação local: 58 testes Python e 7 testes Node aprovados antes do build empresarial.
+
 ## Sexta-feira, 30/10/2026 - Versão 1.8.12 (histórico separado por usuário)
 
 - Todo novo histórico de pedido, multa contratual ou saldo de contas passa a guardar a matrícula autenticada e o usuário do Windows que executou a operação.
